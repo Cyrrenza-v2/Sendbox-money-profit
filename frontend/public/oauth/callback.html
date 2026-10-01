@@ -1,1 +1,27 @@
-<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VELTRION — Deriv Callback</title></head><body><p>Returning to VELTRION…</p><script>const q=window.location.search||"";window.location.replace("/Sendbox-money-profit/connect-deriv/callback"+q);</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#07110d">
+  <title>VELTRION — Deriv Callback</title>
+  <style>
+    html,body{margin:0;min-height:100%;background:#07110d;color:#edf5ef;font:14px system-ui,sans-serif}
+    main{min-height:100vh;display:grid;place-items:center;text-align:center}
+    .card{padding:32px;border:1px solid #1d3a2c;border-radius:18px;background:#0b1711}
+    b{letter-spacing:4px;font-size:24px}
+    p{color:#8da297}
+  </style>
+</head>
+<body>
+  <main><div class="card"><b>VELTRION</b><p>Verifying Deriv authorization…</p></div></main>
+  <script>
+    (function () {
+      const target = "/Sendbox-money-profit/connect-deriv/callback";
+      const query = window.location.search || "";
+      const hash = window.location.hash || "";
+      window.location.replace(target + query + hash);
+    })();
+  </script>
+</body>
+</html>
