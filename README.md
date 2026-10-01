@@ -10,3 +10,5 @@ The web client uses the Supabase publishable key only. Never commit service-role
 Current UI is mobile responsive, data-driven from Supabase, and keeps sandbox values visibly separate from real-account data.
 
 Deriv OAuth is routed through the existing Supabase `deriv-oauth` function.
+
+Build commit: VELTRION web shell connected to Supabase.
