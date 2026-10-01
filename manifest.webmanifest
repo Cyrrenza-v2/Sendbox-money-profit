@@ -1,1 +1,10 @@
-{"name":"VELTRION","short_name":"VELTRION","start_url":".","display":"standalone","background_color":"#07110d","theme_color":"#07110d","icons":[{"src":"favicon.svg","sizes":"64x64","type":"image/svg+xml"}]}
+{
+  "short_name":"VELTRION",
+  "name":"VELTRION Private Trading & Financial Control Platform",
+  "start_url":"./",
+  "scope":"./",
+  "display":"standalone",
+  "background_color":"#07110d",
+  "theme_color":"#07110d",
+  "icons":[{"src":"favicon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}
