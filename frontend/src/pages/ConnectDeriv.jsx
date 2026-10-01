@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import Sidebar from "../components/Sidebar";
 
-const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/deriv-oauth`;
+const FUNCTION_URL = "https://qalowxnqngzsdlayqivr.supabase.co/functions/v1/deriv-oauth";
 
 export default function ConnectDeriv() {
   const [open, setOpen] = useState(false);
@@ -31,7 +31,7 @@ export default function ConnectDeriv() {
       return;
     }
     const response = await fetch(`${FUNCTION_URL}/start`, {
-      headers: { Authorization: `Bearer ${session.access_token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY }
+      headers: { Authorization: `Bearer ${session.access_token}` }
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.authorization_url) {
