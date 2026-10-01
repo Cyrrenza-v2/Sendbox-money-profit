@@ -62,7 +62,6 @@ async function signIn(email, password) {
 
   const { error: sessionError } = await db.from("user_sessions").insert({
     user_id: data.user.id,
-    session_id: data.session?.access_token ? data.session.access_token.slice(0, 36) : null,
     status: "active",
     last_seen_at: new Date().toISOString()
   });
