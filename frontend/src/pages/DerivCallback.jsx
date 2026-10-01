@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/deriv-oauth`;
+const FUNCTION_URL = "https://qalowxnqngzsdlayqivr.supabase.co/functions/v1/deriv-oauth";
 
 export default function DerivCallback() {
   const [message, setMessage] = useState("Verifying Deriv authorization…");
@@ -16,7 +16,7 @@ export default function DerivCallback() {
 
       const response = await fetch(`${FUNCTION_URL}/callback`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, state })
       });
       const data = await response.json().catch(() => ({}));
