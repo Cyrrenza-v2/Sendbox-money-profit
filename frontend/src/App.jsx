@@ -11,7 +11,7 @@ export default function App() {
   return <Routes>
     <Route path="/login" element={<Login />} />
     <Route path="/connect-deriv" element={<ProtectedRoute><ConnectDeriv /></ProtectedRoute>} />
-    <Route path="/connect-deriv/callback" element={<ProtectedRoute><DerivCallback /></ProtectedRoute>} />
+    <Route path="/connect-deriv/callback" element={<DerivCallback />} />
     <Route path="/markets" element={<ProtectedRoute><Markets /></ProtectedRoute>} />
     <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
     <Route path="/security" element={<ProtectedRoute><Security /></ProtectedRoute>} />
