@@ -1,59 +1,15 @@
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-async function supabaseUserFromToken(token) {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error('AUTH_NOT_CONFIGURED');
-  const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-    headers:{ Authorization:`Bearer ${token}`, apikey:SUPABASE_ANON_KEY }
-  });
-  if (!response.ok) return null;
-  return response.json();
-}
-
+import { AuthService } from "./services/authService.js";
+const authService = new AuthService();
 export async function requireAuth(req) {
-  const value = req.headers.authorization || '';
-  if (!value.startsWith('Bearer ')) {
-    const error = new Error('AUTH_REQUIRED'); error.statusCode=401; throw error;
-  }
-  const token=value.slice(7).trim();
-  if (!token) { const error=new Error('AUTH_REQUIRED'); error.statusCode=401; throw error; }
-  const user=await supabaseUserFromToken(token);
-  if (!user?.id) { const error=new Error('INVALID_SESSION'); error.statusCode=401; throw error; }
-  return { user, token };
+  const value = req.headers.authorization || "";
+  if (!value.startsWith("Bearer ")) { const error = new Error("AUTH_REQUIRED"); error.statusCode = 401; throw error; }
+  return authService.authenticateToken(value.slice(7).trim());
 }
-
 export async function requireActiveSession(req) {
-  const auth=await requireAuth(req);
-  if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error('SESSION_VALIDATION_NOT_CONFIGURED');
-  const url=new URL(`${SUPABASE_URL}/rest/v1/user_sessions`);
-  url.searchParams.set('select','id,status,revoked_at,session_id');
-  url.searchParams.set('user_id',`eq.${auth.user.id}`);
-  const payload = JSON.parse(Buffer.from(auth.token.split('.')[1], 'base64url').toString('utf8'));
-  const sessionId = payload.session_id;
-  if (!sessionId) { const error=new Error('SESSION_ID_MISSING'); error.statusCode=401; throw error; }
-  url.searchParams.set('session_id',`eq.${sessionId}`);
-  url.searchParams.set('limit','1');
-  const response=await fetch(url,{headers:{apikey:SUPABASE_SERVICE_ROLE_KEY,Authorization:`Bearer ${SUPABASE_SERVICE_ROLE_KEY}`}});
-  if (!response.ok) throw new Error('SESSION_LOOKUP_FAILED');
-  const rows=await response.json();
-  const active=rows.find(row=>row.status==='active' && !row.revoked_at);
-  if (!active) { const error=new Error('SESSION_REVOKED'); error.statusCode=401; throw error; }
-  return auth;
+  const auth = await requireAuth(req);
+  return authService.verifyActiveSession(auth);
 }
-
-
 export async function requireAdmin(req) {
   const auth = await requireActiveSession(req);
-  if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error('ADMIN_VALIDATION_NOT_CONFIGURED');
-  const url = new URL(`${SUPABASE_URL}/rest/v1/user_roles`);
-  url.searchParams.set('select','role');
-  url.searchParams.set('user_id',`eq.${auth.user.id}`);
-  url.searchParams.set('role','in.(admin,risk_admin,finance_admin,support)');
-  url.searchParams.set('limit','1');
-  const response = await fetch(url,{headers:{apikey:SUPABASE_SERVICE_ROLE_KEY,Authorization:`Bearer ${SUPABASE_SERVICE_ROLE_KEY}`}});
-  if (!response.ok) throw new Error('ADMIN_LOOKUP_FAILED');
-  const rows=await response.json();
-  if (!rows.length) { const error=new Error('ADMIN_REQUIRED'); error.statusCode=403; throw error; }
-  return auth;
+  return authService.verifyAdmin(auth);
 }
