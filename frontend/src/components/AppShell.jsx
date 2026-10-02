@@ -1,20 +1,108 @@
-import React,{useEffect,useState} from "react";
-import { Outlet,useLocation,useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient";
-import { api } from "../lib/api";
-const navItems=[
- ["OVERVIEW",[["Home","/app/home","⌂"]]],
- ["TRADING",[["Sandbox Terminal","/app/trading/terminal","▶"],["Markets","/app/trading/markets","↗"],["Positions","/app/trading/positions","◈"],["Orders","/app/trading/orders","≡"],["Trade History","/app/trading/history","◷"]]],
- ["CONNECTIONS",[["Deriv Connection","/app/deriv/account","⚡"],["MT5 Infrastructure","/app/mt5/overview","▣"]]],
- ["ACCOUNTS",[["Sandbox Overview","/app/sandbox/overview","◇"],["Real Account","/app/real/account","◆"],["Profit Wallet","/app/wallet/overview","$"]]],
- ["INTELLIGENCE",[["AI Assistants","/app/ai-assistants","✦"],["Analytics","/app/analytics/performance","▥"]]],
- ["CONTROL",[["Operations","/app/operations/health","⚙"],["Security","/app/security/overview","▣"],["Settings","/app/settings","⌘"]]]
+
+const navGroups = [
+  { label: "COMMAND", items: [
+    ["Home", "/app/home", "⌂"],
+    ["Markets", "/app/trading/markets", "↗"],
+    ["Positions", "/app/trading/positions", "◈"],
+    ["Orders", "/app/trading/orders", "≋"],
+    ["Trade History", "/app/trading/history", "◷"],
+  ]},
+  { label: "ACCOUNTS & INFRASTRUCTURE", items: [
+    ["Deriv Connection", "/app/deriv/account", "⚡"],
+    ["MT5 Infrastructure", "/app/mt5/overview", "▦"],
+    ["Sandbox", "/app/sandbox/overview", "◇"],
+    ["Real Account", "/app/real/account", "▣"],
+    ["Profit Wallet", "/app/wallet/overview", "$"],
+  ]},
+  { label: "CONTROL", items: [
+    ["Analytics", "/app/analytics/performance", "▥"],
+    ["Operations", "/app/operations/health", "⚙"],
+    ["Security", "/app/security/overview", "⬡"],
+    ["Settings", "/app/settings", "☷"],
+  ]},
 ];
-export default function AppShell(){
- const [drawer,setDrawer]=useState(false),[systemStatus,setSystemStatus]=useState("OFFLINE"),[mode,setMode]=useState("SANDBOX"),[realEnabled,setRealEnabled]=useState(false);
- const location=useLocation(),navigate=useNavigate();
- useEffect(()=>{let active=true;const load=async()=>{try{const d=await api("/system/health");if(active)setSystemStatus(String(d.status||d.globalStatus||"LIVE").toUpperCase())}catch{if(active)setSystemStatus("OFFLINE")}try{const {data}=await supabase.from("app_settings").select("trading_mode,real_trading_enabled").order("updated_at",{ascending:false}).limit(1).maybeSingle();if(active&&data){setMode(String(data.trading_mode||"SANDBOX").toUpperCase());setRealEnabled(data.real_trading_enabled===true)}}catch{}};load();const t=setInterval(load,30000);return()=>{active=false;clearInterval(t)}},[]);
- const logout=async()=>{await supabase.auth.signOut();navigate("/login")};const go=p=>{navigate(p);setDrawer(false)};
- return <div className="shell"><aside className={"shell-sidebar "+(drawer?"open":"")}><div className="shell-brand"><b>VELTRION</b><span>COMMAND TERMINAL</span></div><div className="shell-mode"><span>MODE</span><strong className={realEnabled?"real":""}>{mode}</strong></div><nav className="shell-nav">{navItems.map(([g,items])=><React.Fragment key={g}><div className="nav-heading">{g}</div>{items.map(([label,path,icon])=><button key={path} className={location.pathname.startsWith(path)?"active":""} onClick={()=>go(path)}><i>{icon}</i><span>{label}</span></button>)}</React.Fragment>)}</nav><button className="shell-logout" onClick={logout}>⇥ LOG OUT</button></aside>
- {drawer&&<div className="drawer-backdrop" onClick={()=>setDrawer(false)}/>}<div className="shell-main"><header className="shell-header"><button className="mobile-menu" onClick={()=>setDrawer(true)}>☰</button><div className="crumb">{location.pathname.replace(/^\/app\//,"").replaceAll("/"," / ").toUpperCase()||"HOME"}</div><div className="header-actions"><span className={"health "+systemStatus.toLowerCase()}><b>●</b> SYSTEM {systemStatus}</span><button className="icon-btn" onClick={()=>go("/app/operations/alerts")}>♧</button><span className="role-badge">ADMIN</span></div></header><main className="shell-content"><Outlet/></main><nav className="mobile-nav"><button onClick={()=>go("/app/home")}>⌂<span>Home</span></button><button onClick={()=>go("/app/trading/markets")}>↗<span>Markets</span></button><button onClick={()=>go("/app/trading/terminal")}>▶<span>Trade</span></button><button onClick={()=>go("/app/ai-assistants")}>✦<span>AI</span></button><button onClick={()=>setDrawer(true)}>☰<span>Menu</span></button></nav></div></div>;
+
+export default function AppShell() {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [health, setHealth] = useState("CHECKING");
+  const [mode, setMode] = useState("SANDBOX");
+  const [userEmail, setUserEmail] = useState("");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const pageName = useMemo(() => {
+    const all = navGroups.flatMap(g => g.items);
+    return all.find(([, path]) => path === location.pathname)?.[0] || (location.pathname.endsWith("alerts") ? "Operations Alerts" : "VELTRION");
+  }, [location.pathname]);
+
+  useEffect(() => {
+    let alive = true;
+    async function refresh() {
+      try {
+        const { data, error } = await supabase.functions.invoke("system-health");
+        if (error) throw error;
+        const status = String(data?.globalStatus || data?.status || (data?.ok ? "LIVE" : "DEGRADED")).toUpperCase();
+        if (alive) setHealth(["OK", "HEALTHY", "ONLINE", "LIVE"].includes(status) ? "LIVE" : status.includes("DEGRAD") ? "DEGRADED" : status === "CHECKING" ? "CHECKING" : "OFFLINE");
+      } catch {
+        if (alive) setHealth("OFFLINE");
+      }
+    }
+    refresh();
+    const timer = window.setInterval(refresh, 30000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    supabase.auth.getUser().then(({ data }) => { if (alive) setUserEmail(data?.user?.email || "Authorized admin"); });
+    return () => { alive = false; };
+  }, []);
+
+  async function logout() {
+    await supabase.auth.signOut();
+    navigate("/login", { replace: true });
+  }
+
+  function go(path) { navigate(path); setDrawerOpen(false); }
+
+  const sidebar = <aside className={`vel-sidebar ${drawerOpen ? "is-open" : ""}`}>
+    <div className="vel-brand-row">
+      <div><div className="vel-brand">VELTRION</div><div className="vel-brand-sub">COMMAND TERMINAL</div></div>
+      <span className={`vel-mode ${mode === "REAL" ? "is-real" : ""}`}>{mode}</span>
+      <button className="vel-close" onClick={() => setDrawerOpen(false)} aria-label="Close menu">×</button>
+    </div>
+    <div className="vel-nav-scroll">
+      {navGroups.map(group => <section className="vel-nav-group" key={group.label}>
+        <div className="vel-nav-label">{group.label}</div>
+        {group.items.map(([label, path, icon]) => <button key={path} className={`vel-nav-item ${location.pathname === path || (path !== "/app/home" && location.pathname.startsWith(path)) ? "active" : ""}`} onClick={() => go(path)}><span className="vel-nav-icon">{icon}</span><span>{label}</span></button>)}
+      </section>)}
+    </div>
+    <div className="vel-sidebar-bottom"><div className="vel-session"><span className="vel-session-dot" /> SESSION AUTHENTICATED</div><button className="vel-logout" onClick={logout}>↪ &nbsp; Log Out</button></div>
+  </aside>;
+
+  return <div className="vel-app">
+    {drawerOpen && <button className="vel-drawer-backdrop" onClick={() => setDrawerOpen(false)} aria-label="Close navigation" />}
+    {sidebar}
+    <div className="vel-main">
+      <header className="vel-topbar">
+        <button className="vel-menu-toggle" onClick={() => setDrawerOpen(true)} aria-label="Open navigation">☰</button>
+        <div className="vel-breadcrumb"><span>VELTRION</span><i>/</i><strong>{pageName}</strong></div>
+        <div className="vel-topbar-right">
+          <div className={`vel-health health-${health.toLowerCase()}`}><span /> SYSTEM {health}</div>
+          <button className="vel-mode-switch" onClick={() => setMode(current => current === "SANDBOX" ? "REAL" : "SANDBOX")} title="Display mode only; this does not enable trading">{mode} MODE <span>⌄</span></button>
+          <div className="vel-user"><span className="vel-avatar">A</span><div><b>ADMIN</b><small>{userEmail || "Authenticated"}</small></div></div>
+        </div>
+      </header>
+      <main className="vel-content"><Outlet /></main>
+      <nav className="vel-mobile-nav">
+        <button onClick={() => go("/app/home")} className={location.pathname === "/app/home" ? "active" : ""}><span>⌂</span>Home</button>
+        <button onClick={() => go("/app/trading/markets")} className={location.pathname.startsWith("/app/trading/markets") ? "active" : ""}><span>↗</span>Markets</button>
+        <button onClick={() => go("/app/trading/positions")} className={location.pathname.startsWith("/app/trading/positions") ? "active" : ""}><span>◈</span>Trade</button>
+        <button onClick={() => go("/app/wallet/overview")} className={location.pathname.startsWith("/app/wallet") ? "active" : ""}><span>$</span>Wallet</button>
+        <button onClick={() => setDrawerOpen(true)}><span>☰</span>Menu</button>
+      </nav>
+    </div>
+  </div>;
 }
