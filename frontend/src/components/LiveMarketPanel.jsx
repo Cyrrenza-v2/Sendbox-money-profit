@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 
+const DERIV_APP_ID = import.meta.env.VITE_DERIV_APP_ID || "1089";
 const DERIV_PUBLIC_ENDPOINTS = [
-  "wss://ws.derivws.com/websockets/v3?app_id=1089",
-  "wss://ws.binaryws.com/websockets/v3?app_id=1089"
+  `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(DERIV_APP_ID)}`,
+  `wss://ws.binaryws.com/websockets/v3?app_id=${encodeURIComponent(DERIV_APP_ID)}`
 ];
 
 export default function LiveMarketPanel({ compact = false, selectedSymbol = null, onSymbolChange }) {
@@ -10,6 +11,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
   const [ticks, setTicks] = useState({});
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [discoveryComplete, setDiscoveryComplete] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [marketFilter, setMarketFilter] = useState("ALL");
@@ -23,13 +25,14 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
     let symbolsLoaded = false;
     let failureHandled = false;
     let connectTimeout = null;
+    let tickTimers = [];
 
     const clearConnectionTimeout = () => {
       if (connectTimeout) clearTimeout(connectTimeout);
       connectTimeout = null;
     };
 
-    const scheduleNextEndpoint = () => {
+    const scheduleNextEndpoint = reason => {
       if (disposed || failureHandled) return;
       failureHandled = true;
       clearConnectionTimeout();
@@ -37,10 +40,11 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       try { socket?.close(); } catch {}
       if (endpointIndex < DERIV_PUBLIC_ENDPOINTS.length - 1) {
         endpointIndex += 1;
-        retryTimer = setTimeout(connect, 400);
+        retryTimer = setTimeout(connect, 500);
       } else {
         setLoading(false);
-        setError("Deriv market connection failed. Trying again automatically; if this continues, your network may block WebSocket traffic.");
+        setDiscoveryComplete(false);
+        setError(reason || "Could not reach Deriv market data from this browser. Check network WebSocket access and the Deriv app ID configuration.");
         endpointIndex = 0;
         retryTimer = setTimeout(connect, Math.min(30000, 2000 * (2 ** Math.min(retryCount++, 4))));
       }
@@ -55,20 +59,21 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       try {
         socket = new WebSocket(endpoint);
       } catch {
-        scheduleNextEndpoint();
+        scheduleNextEndpoint("Your browser could not create a Deriv WebSocket connection.");
         return;
       }
 
       connectTimeout = setTimeout(() => {
-        if (!symbolsLoaded && !disposed) scheduleNextEndpoint();
+        if (!symbolsLoaded && !disposed) {
+          scheduleNextEndpoint("Deriv connected too slowly or did not return its active-symbol list. Verify VITE_DERIV_APP_ID and allow WebSocket traffic on your network.");
+        }
       }, 12000);
 
       socket.onopen = () => {
         if (disposed) return;
         setConnected(true);
         setError("");
-        retryCount = 0;
-        socket.send(JSON.stringify({ active_symbols: "full", product_type: "basic", req_id: 1 }));
+        socket.send(JSON.stringify({ active_symbols: "brief", product_type: "basic", req_id: 1 }));
       };
 
       socket.onmessage = event => {
@@ -77,11 +82,14 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
           const message = JSON.parse(event.data);
 
           if (message.error) {
-            const messageText = message.error.message || "Deriv returned a market-data error.";
-            setError(messageText);
+            const messageText = message.error.message || message.error.code || "Deriv returned a market-data error.";
             if (message.req_id === 1) {
               setLoading(false);
-              // Keep the socket open so a server-side rejection is visible rather than looping forever.
+              setDiscoveryComplete(false);
+              setError(`Deriv market discovery failed: ${messageText}`);
+              clearConnectionTimeout();
+            } else if (message.msg_type === "tick") {
+              setError(`A live price subscription failed: ${messageText}`);
             }
             return;
           }
@@ -90,7 +98,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             const discovered = message.active_symbols.map(item => ({
               symbol: item.underlying_symbol ?? item.symbol,
               name: item.underlying_symbol_name ?? item.display_name ?? item.symbol,
-              market: item.market ?? item.symbol_type ?? "Other",
+              market: item.market_display_name ?? item.market ?? item.symbol_type ?? "Other",
               subgroup: item.subgroup ?? item.submarket ?? ""
             })).filter(item => item.symbol && item.name);
             const unique = Array.from(new Map(discovered.map(item => [item.symbol, item])).values());
@@ -98,15 +106,19 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             clearConnectionTimeout();
             setMarkets(unique);
             setLoading(false);
+            setDiscoveryComplete(true);
             setConnected(true);
+            setError(unique.length ? "" : "Deriv connected, but returned an empty active-symbol list for product type 'basic'.");
 
-            // Deriv's ticks request takes one symbol per request; do not send an array.
-            unique.forEach((item, index) => {
-              setTimeout(() => {
+            // Queue a modest number of tick subscriptions to avoid flooding the public socket.
+            tickTimers.forEach(clearTimeout);
+            tickTimers = [];
+            unique.slice(0, 80).forEach((item, index) => {
+              tickTimers.push(setTimeout(() => {
                 if (!disposed && socket?.readyState === WebSocket.OPEN) {
                   socket.send(JSON.stringify({ ticks: item.symbol, subscribe: 1, req_id: 1000 + index }));
                 }
-              }, Math.min(index * 30, 6000));
+              }, index * 80));
             });
             return;
           }
@@ -125,22 +137,22 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             }));
           }
         } catch {
-          setError("Received an unreadable response from Deriv.");
+          setError("Deriv returned a response that could not be read.");
         }
       };
 
       socket.onerror = () => {
         if (disposed) return;
-        scheduleNextEndpoint();
+        scheduleNextEndpoint("Unable to establish a WebSocket connection to Deriv. Check whether your network blocks WebSockets and confirm VITE_DERIV_APP_ID is a valid Deriv application ID.");
       };
 
       socket.onclose = () => {
         if (disposed) return;
         setConnected(false);
+        clearConnectionTimeout();
         if (!symbolsLoaded) {
-          scheduleNextEndpoint();
+          scheduleNextEndpoint("Deriv closed the connection before sending active markets. Check the Deriv app ID and network WebSocket access.");
         } else {
-          clearConnectionTimeout();
           retryTimer = setTimeout(() => {
             endpointIndex = 0;
             connect();
@@ -154,6 +166,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       disposed = true;
       clearConnectionTimeout();
       if (retryTimer) clearTimeout(retryTimer);
+      tickTimers.forEach(clearTimeout);
       try { socket?.close(); } catch {}
     };
   }, []);
@@ -186,7 +199,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       </select>
       <span className="market-count">{loading ? "Discovering markets…" : `${visibleMarkets.length} / ${markets.length} active`}</span>
     </div>
-    {error && <div className="market-error">{error}</div>}
+    {error && <div className="market-error" role="status">{error}</div>}
     <div className={compact ? "market-grid compact" : "market-grid"}>
       {visibleMarkets.map(item => {
         const tick = ticks[item.symbol];
@@ -198,7 +211,8 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         </button>;
       })}
     </div>
-    {!loading && visibleMarkets.length === 0 && <div className="market-empty">No active Deriv symbols match this filter.</div>}
+    {!loading && discoveryComplete && visibleMarkets.length === 0 && <div className="market-empty">No active Deriv symbols match this filter.</div>}
+    {!loading && !discoveryComplete && markets.length === 0 && <div className="market-empty">Market list is unavailable until the Deriv connection succeeds. The diagnostic above explains the latest failure.</div>}
     <div className="market-footnote">Dynamically discovered from Deriv <code>active_symbols</code>. Public live market data only; trading credentials remain server-side.</div>
   </section>;
 }
