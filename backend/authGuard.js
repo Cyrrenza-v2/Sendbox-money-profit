@@ -29,7 +29,10 @@ export async function requireActiveSession(req) {
   const url=new URL(`${SUPABASE_URL}/rest/v1/user_sessions`);
   url.searchParams.set('select','id,status,revoked_at,session_id');
   url.searchParams.set('user_id',`eq.${auth.user.id}`);
-  url.searchParams.set('session_id',`eq.${auth.user.id}`);
+  const payload = JSON.parse(Buffer.from(auth.token.split('.')[1], 'base64url').toString('utf8'));
+  const sessionId = payload.session_id;
+  if (!sessionId) { const error=new Error('SESSION_ID_MISSING'); error.statusCode=401; throw error; }
+  url.searchParams.set('session_id',`eq.${sessionId}`);
   url.searchParams.set('limit','1');
   const response=await fetch(url,{headers:{apikey:SUPABASE_SERVICE_ROLE_KEY,Authorization:`Bearer ${SUPABASE_SERVICE_ROLE_KEY}`}});
   if (!response.ok) throw new Error('SESSION_LOOKUP_FAILED');
