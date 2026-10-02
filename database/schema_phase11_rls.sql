@@ -26,6 +26,8 @@ drop policy if exists "Restrict system alerts access to authenticated admins" on
 
 create policy "Phase11 admin system health" on public.system_health for all to authenticated
   using ((select private.is_admin())) with check ((select private.is_admin()));
+drop policy if exists "Admins can read global risk limits" on public.risk_limits;
+drop policy if exists "select_self_or_admin_risk_limits" on public.risk_limits;
 create policy "Phase11 admin risk limits" on public.risk_limits for all to authenticated
   using ((select private.is_admin())) with check ((select private.is_admin()));
 create policy "Phase11 admin emergency controls" on public.emergency_controls for all to authenticated
@@ -53,6 +55,11 @@ alter table public.emergency_controls enable row level security;
 alter table public.system_alerts enable row level security;
 alter table public.analytics_daily_snapshots enable row level security;
 alter table public.analytics_trade_metrics enable row level security;
+
+revoke all on public.system_health, public.risk_limits, public.emergency_controls, public.system_alerts,
+  public.analytics_daily_snapshots, public.analytics_trade_metrics from anon;
+grant select on public.system_health, public.risk_limits, public.emergency_controls, public.system_alerts,
+  public.analytics_daily_snapshots, public.analytics_trade_metrics to authenticated;
 
 -- Financial ledgers remain isolated: users can read only their own records; admins can read all.
 drop policy if exists "real_orders_select_own" on public.real_orders;
