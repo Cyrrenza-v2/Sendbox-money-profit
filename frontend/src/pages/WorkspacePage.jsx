@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
+import LiveMarketPanel from "../components/LiveMarketPanel";
 const configBySection = {
- markets:{intro:"Market instruments returned by the connected data service.",source:"market_symbols"},
+ markets:{intro:"All currently active Deriv market instruments and live prices.",source:"Deriv live market feed"},
  positions:{intro:"Position records from the authenticated account.",source:"sandbox_positions"},
  orders:{intro:"Order records from the connected trading service.",source:"trading service"},
  history:{intro:"Historical activity from the connected trading service.",source:"trading service"},
@@ -18,10 +19,9 @@ const configBySection = {
 export default function WorkspacePage({title,section}){
  const [state,setState]=useState({loading:true,error:"",data:null});
  const config=configBySection[section]||{intro:"Live account information from Supabase.",source:"Supabase"};
- useEffect(()=>{let alive=true;async function load(){setState({loading:true,error:"",data:null});try{
+ useEffect(()=>{if(section==="markets"){setState({loading:false,error:"",data:null});return;}let alive=true;async function load(){setState({loading:true,error:"",data:null});try{
  let data=null,error=null;
- if(section==="markets"){const r=await supabase.from("market_symbols").select("*").limit(30);data=r.data;error=r.error;}
- else if(section==="positions"){const r=await supabase.from("sandbox_positions").select("*").order("updated_at",{ascending:false}).limit(50);data=r.data;error=r.error;}
+ if(section==="positions"){const r=await supabase.from("sandbox_positions").select("*").order("updated_at",{ascending:false}).limit(50);data=r.data;error=r.error;}
  else {
   const {data:{user}}=await supabase.auth.getUser();if(!user)throw new Error("Your session has expired. Sign in again.");
   if(section==="mt5"){const r=await supabase.from("mt5_connections").select("status,server,last_heartbeat_at,environment").eq("user_id",user.id).maybeSingle();data=r.data;error=r.error;}
@@ -48,6 +48,7 @@ export default function WorkspacePage({title,section}){
  if(error)throw error;if(alive)setState({loading:false,error:"",data});
  }catch(e){if(alive)setState({loading:false,error:e?.message||"Unable to load backend data.",data:null});}}
  load();return()=>{alive=false};},[section]);
+ if(section==="markets") return <div className="vel-page"><div className="vel-page-heading"><div><div className="vel-eyebrow">VELTRION / MARKET DATA</div><h1>{title}</h1><p>All currently active Deriv instruments with live public tick prices. This screen displays market data only and does not execute trades.</p></div><span className="vel-data-source">SOURCE · DERIV LIVE FEED</span></div><LiveMarketPanel /></div>;
  const rows=Array.isArray(state.data)?state.data:state.data&&typeof state.data==="object"?Object.entries(state.data).map(([field,value])=>({field,value})):[];
  return <div className="vel-page"><div className="vel-page-heading"><div><div className="vel-eyebrow">VELTRION / OPERATIONS PLATFORM</div><h1>{title}</h1><p>{config.intro}</p></div><span className="vel-data-source">SOURCE · {config.source}</span></div>
  {state.loading?<div className="vel-panel vel-state">Loading authorized backend data…</div>:state.error?<div className="vel-panel vel-error"><b>Data unavailable</b><p>{state.error}</p><small>No sample values are being shown.</small></div>:!state.data||(Array.isArray(state.data)&&state.data.length===0)?<div className="vel-panel vel-state"><div className="vel-state-mark">—</div><h3>No records returned</h3><p>The connected backend did not return data for this view. This is not a fabricated zero balance.</p></div>:<div className="vel-panel"><div className="vel-panel-title">BACKEND RESPONSE <span>{rows.length} FIELD{rows.length===1?"":"S"}</span></div>
