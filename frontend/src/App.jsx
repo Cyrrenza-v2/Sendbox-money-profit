@@ -23,14 +23,22 @@ const sections=[
  ["security/overview","Security","Authenticated audit and security state."],
  ["settings","Settings","Backend configuration and system state."]
 ];
-export default function App(){return <Routes>
- <Route path="/login" element={<Login/>}/><Route path="/connect-deriv/callback" element={<DerivCallback/>}/>
- <Route element={<ProtectedRoute><AppShell/></ProtectedRoute>}>
-  <Route path="/app/home" element={<Home/>}/><Route path="/app/deriv/account" element={<ConnectDeriv/>}/>
-  <Route path="/app/trading/terminal" element={<TradeTerminal/>}/>
-  <Route path="/app/sandbox/overview" element={<SandboxDashboard/>}/>
-  {sections.filter(([path])=>path!=="sandbox/overview").map(([path,title,purpose])=><Route key={path} path={"/app/"+path} element={<SectionPage title={title} purpose={purpose}/>})}
-  <Route path="/app" element={<Navigate to="/app/home" replace/>}/>
- </Route>
- <Route path="/" element={<Navigate to="/app/home" replace/>}/><Route path="*" element={<Navigate to="/app/home" replace/>}/>
-</Routes>}
+
+export default function App(){
+ return <Routes>
+  <Route path="/login" element={<Login/>}/>
+  <Route path="/connect-deriv/callback" element={<DerivCallback/>}/>
+  <Route element={<ProtectedRoute><AppShell/></ProtectedRoute>}>
+   <Route path="/app/home" element={<Home/>}/>
+   <Route path="/app/deriv/account" element={<ConnectDeriv/>}/>
+   <Route path="/app/trading/terminal" element={<TradeTerminal/>}/>
+   <Route path="/app/sandbox/overview" element={<SandboxDashboard/>}/>
+   {sections.map(([path,title,purpose])=>(
+     <Route key={path} path={"/app/"+path} element={<SectionPage title={title} purpose={purpose}/>} />
+   ))}
+   <Route path="/app" element={<Navigate to="/app/home" replace/>}/>
+  </Route>
+  <Route path="/" element={<Navigate to="/app/home" replace/>}/>
+  <Route path="*" element={<Navigate to="/app/home" replace/>}/>
+ </Routes>;
+}
