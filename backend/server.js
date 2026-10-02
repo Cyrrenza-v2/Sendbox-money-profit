@@ -70,7 +70,7 @@ loadGlobalStop().catch(() => riskEngine.setEmergencyStop(true));
 
 const server = http.createServer(async (req,res) => {
   try {
-    // Vercel sends browser requests to this Node entrypoint. Serve the Vite build here.
+    // Serve browser requests from the Vite production build.
     if (req.method === "GET" && !req.url.startsWith("/api/") && req.url !== "/health") {
       const requested = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
       const relative = requested === "/" ? "index.html" : requested.replace(/^\/+/, "");
