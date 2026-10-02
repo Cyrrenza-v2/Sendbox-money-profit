@@ -1,6 +1,8 @@
 import http from "node:http";
 import { RealExecutionEngine } from "./realExecutionEngine.js";
 import { riskEngine } from "./riskEngine.js";
+import { requireAdmin } from "./authGuard.js";
+import { SecureOrderProcessor } from "./secureOrderProcessor.js";
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -21,12 +23,7 @@ function readBody(req) {
     req.on("error", reject);
   });
 }
-async function authenticate(req) {
-  const authorization = req.headers.authorization;
-  if (!authorization?.startsWith("Bearer ") || !SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
-  const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { Authorization: authorization, apikey: SUPABASE_ANON_KEY } });
-  return response.ok ? response.json() : null;
-}
+
 async function adminRest(path, params = {}) {
   if (!SUPABASE_SERVICE_ROLE_KEY) return null;
   const url = new URL(`${SUPABASE_URL}/rest/v1/${path}`);
@@ -64,6 +61,19 @@ async function riskSnapshot(userId) {
 }
 
 const engine = new RealExecutionEngine();
+const secureOrderProcessor = new SecureOrderProcessor({
+  realExecutor: async ({ userId, order }) => {
+    const snapshot = await riskSnapshot(userId);
+    const risk = riskEngine.validateOrder("REAL", { ...order, amount: order.stake, ...snapshot });
+    if (!risk.allowed) throw new Error(risk.reason);
+    return engine.submitRealOrder({
+      amount: order.stake, symbol: order.symbol, side: order.side,
+      duration: Number(order.duration || 1), durationUnit: order.durationUnit || "m",
+      currency: order.currency || "USD"
+    });
+  },
+  isRealTradingEnabled: () => REAL_TRADING_ENABLED
+});
 loadGlobalStop().catch(() => riskEngine.setEmergencyStop(true));
 
 const server = http.createServer(async (req, res) => {
@@ -73,44 +83,40 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && req.url === "/api/operations/emergency-stop") {
-      if (!(await authenticate(req))) return json(res, 401, { error: "AUTH_REQUIRED" });
+      await requireAdmin(req);
       await setGlobalControl(true);
       return json(res, 200, { ok: true, emergencyStopped: true, blockedPipelines: ["SANDBOX","REAL","MT5"] });
     }
 
     if (req.method === "POST" && req.url === "/api/operations/resume") {
-      if (!(await authenticate(req))) return json(res, 401, { error: "AUTH_REQUIRED" });
+      await requireAdmin(req);
       await setGlobalControl(false);
       return json(res, 200, { ok: true, emergencyStopped: false });
     }
 
     if (req.method === "POST" && req.url === "/api/real/emergency-stop") {
-      if (!(await authenticate(req))) return json(res, 401, { error: "AUTH_REQUIRED" });
+      await requireAdmin(req);
       await setGlobalControl(true);
       return json(res, 200, { ok: true, emergencyStopped: true });
     }
 
     if (req.method === "POST" && req.url === "/api/real/resume") {
-      if (!(await authenticate(req))) return json(res, 401, { error: "AUTH_REQUIRED" });
+      await requireAdmin(req);
       if (!REAL_TRADING_ENABLED) return json(res, 423, { error: "REAL_TRADING_DISABLED" });
       await setGlobalControl(false);
       return json(res, 200, { ok: true, emergencyStopped: false });
     }
 
     if (req.method === "POST" && req.url === "/api/real/orders") {
-      const user = await authenticate(req);
-      if (!user) return json(res, 401, { error: "AUTH_REQUIRED" });
+      const auth = await requireAdmin(req);
+      const user = auth.user;
       const body = await readBody(req);
-      const snapshot = await riskSnapshot(user.id);
-      const risk = riskEngine.validateOrder("REAL", { ...body, stake: body.amount, ...snapshot });
-      if (!risk.allowed) return json(res, 423, { error: risk.reason, message: risk.message });
       if (!REAL_TRADING_ENABLED) return json(res, 503, { error: "REAL_TRADING_DISABLED" });
       if (body.mode !== "REAL" || body.confirmation !== "EXPLICIT") return json(res, 400, { error: "EXPLICIT_REAL_CONFIRMATION_REQUIRED" });
       if (!body.symbol || !["BUY","SELL"].includes(body.side)) return json(res, 400, { error: "INVALID_ORDER" });
-
-      const result = await engine.submitRealOrder({
-        amount: Number(body.amount), symbol: body.symbol, side: body.side,
-        duration: Number(body.duration || 1), durationUnit: body.durationUnit || "m", currency: body.currency || "USD"
+      const result = await secureOrderProcessor.process({
+        auth, params: { ...body, stake: body.amount, mode: "REAL" },
+        confirmation: body.confirmation === "EXPLICIT"
       });
       return json(res, 200, result);
     }
