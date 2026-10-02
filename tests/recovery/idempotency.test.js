@@ -1,0 +1,2 @@
+import test from "node:test"; import assert from "node:assert/strict"; import {IdempotencyEngine} from "../../backend/idempotencyEngine.js";
+test("duplicate order/withdrawal request is rejected by actual idempotency engine",async()=>{const e=new IdempotencyEngine();let calls=0;await e.run("request-1",async()=>{calls++;return "ok";});await assert.rejects(e.run("request-1",async()=>{calls++;return "bad";}),/DUPLICATE_REQUEST_ID/);assert.equal(calls,1);});
