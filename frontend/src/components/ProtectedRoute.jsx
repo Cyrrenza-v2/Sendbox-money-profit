@@ -1,28 +1,64 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, Outlet } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 
-export default function ProtectedRoute({ children }) {
+const ADMIN_ROLES = ["admin", "risk_admin", "finance_admin", "support"];
+
+export default function ProtectedRoute() {
   const [state, setState] = useState("loading");
+
   useEffect(() => {
     let live = true;
-    const verify = async () => {
+
+    async function verify() {
       try {
-        const sessionPromise = supabase.auth.getSession();
-        const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("AUTH_TIMEOUT")), 8000));
-        const { data: { session } } = await Promise.race([sessionPromise, timeout]);
-        if (!session) { if (live) setState("denied"); return; }
-        const { data: roles, error } = await supabase.from("user_roles").select("role").eq("user_id", session.user.id);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          if (live) setState("denied");
+          return;
+        }
+
+        const { data: roles, error } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", session.user.id);
+
         if (error) throw error;
-        const ok = (roles || []).some(x => ["admin","risk_admin","finance_admin","support"].includes(String(x.role).toLowerCase()));
-        if (!ok) { await supabase.auth.signOut(); if (live) setState("denied"); return; }
+
+        const authorized = (roles || []).some((row) =>
+          ADMIN_ROLES.includes(String(row.role).toLowerCase())
+        );
+
+        if (!authorized) {
+          await supabase.auth.signOut();
+          if (live) setState("denied");
+          return;
+        }
+
         if (live) setState("ok");
-      } catch (error) { console.error("VELTRION auth check failed:", error); if (live) setState("error"); }
-    };
+      } catch (error) {
+        console.error("VELTRION authentication check failed:", error);
+        if (live) setState("error");
+      }
+    }
+
     verify();
     return () => { live = false; };
   }, []);
-  if (state === "loading") return <div className="secure"><div><b>VELTRION</b><p>Checking secure session…</p></div></div>;
-  if (state === "error") return <div className="secure"><div><b>VELTRION</b><p>Unable to reach the authentication service.</p><button className="primary" onClick={() => window.location.reload()}>RETRY</button></div></div>;
-  return state === "ok" ? children : <Navigate to="/login" replace />;
+
+  if (state === "loading") {
+    return <div className="secure-screen"><b>VELTRION</b><span>SECURING PRIVATE ADMIN SESSION…</span></div>;
+  }
+
+  if (state === "error") {
+    return (
+      <div className="secure-screen">
+        <b>VELTRION</b>
+        <span>Unable to reach the authentication service.</span>
+        <button className="button primary" onClick={() => window.location.reload()}>RETRY</button>
+      </div>
+    );
+  }
+
+  return state === "ok" ? <Outlet /> : <Navigate to="/login" replace />;
 }
