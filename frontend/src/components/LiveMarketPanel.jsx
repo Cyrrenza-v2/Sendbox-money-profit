@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 
 const DERIV_PUBLIC_ENDPOINTS = [
-  "wss://ws.binaryws.com/websockets/v3",
-  "wss://ws.derivws.com/websockets/v3?app_id=1089"
+  "wss://ws.derivws.com/websockets/v3?app_id=1089",
+  "wss://ws.binaryws.com/websockets/v3?app_id=1089"
 ];
 
 export default function LiveMarketPanel({ compact = false, selectedSymbol = null, onSymbolChange }) {
@@ -21,38 +21,49 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
     let retryTimer = null;
     let retryCount = 0;
     let symbolsLoaded = false;
+    let failureHandled = false;
+    let connectTimeout = null;
+
+    const clearConnectionTimeout = () => {
+      if (connectTimeout) clearTimeout(connectTimeout);
+      connectTimeout = null;
+    };
+
+    const scheduleNextEndpoint = () => {
+      if (disposed || failureHandled) return;
+      failureHandled = true;
+      clearConnectionTimeout();
+      setConnected(false);
+      try { socket?.close(); } catch {}
+      if (endpointIndex < DERIV_PUBLIC_ENDPOINTS.length - 1) {
+        endpointIndex += 1;
+        retryTimer = setTimeout(connect, 400);
+      } else {
+        setLoading(false);
+        setError("Deriv market connection failed. Trying again automatically; if this continues, your network may block WebSocket traffic.");
+        endpointIndex = 0;
+        retryTimer = setTimeout(connect, Math.min(30000, 2000 * (2 ** Math.min(retryCount++, 4))));
+      }
+    };
 
     const connect = () => {
       if (disposed) return;
-      const endpoint = DERIV_PUBLIC_ENDPOINTS[endpointIndex];
-      let opened = false;
-      let failureHandled = false;
-      const failCurrentSocket = () => {
-        if (failureHandled || disposed) return;
-        failureHandled = true;
-        clearTimeout(timeout);
-        setConnected(false);
-        tryNextEndpoint();
-      };
+      failureHandled = false;
       symbolsLoaded = false;
+      const endpoint = DERIV_PUBLIC_ENDPOINTS[endpointIndex];
 
       try {
         socket = new WebSocket(endpoint);
       } catch {
-        tryNextEndpoint();
+        scheduleNextEndpoint();
         return;
       }
 
-      const timeout = setTimeout(() => {
-        if (!opened && !disposed) {
-          try { socket?.close(); } catch {}
-          failCurrentSocket();
-        }
-      }, 10000);
+      connectTimeout = setTimeout(() => {
+        if (!symbolsLoaded && !disposed) scheduleNextEndpoint();
+      }, 12000);
 
       socket.onopen = () => {
-        opened = true;
-        clearTimeout(timeout);
         if (disposed) return;
         setConnected(true);
         setError("");
@@ -64,9 +75,14 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         if (disposed) return;
         try {
           const message = JSON.parse(event.data);
+
           if (message.error) {
-            setError(message.error.message || "Deriv rejected the market data request.");
-            if (message.req_id === 1) setLoading(false);
+            const messageText = message.error.message || "Deriv returned a market-data error.";
+            setError(messageText);
+            if (message.req_id === 1) {
+              setLoading(false);
+              // Keep the socket open so a server-side rejection is visible rather than looping forever.
+            }
             return;
           }
 
@@ -79,14 +95,19 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             })).filter(item => item.symbol && item.name);
             const unique = Array.from(new Map(discovered.map(item => [item.symbol, item])).values());
             symbolsLoaded = true;
+            clearConnectionTimeout();
             setMarkets(unique);
             setLoading(false);
-            if (unique.length) {
-              // Deriv accepts an array of symbols for a tick subscription.
-              socket.send(JSON.stringify({ ticks: unique.map(item => item.symbol), subscribe: 1, req_id: 2 }));
-            } else {
-              setError("Deriv connected, but no active symbols were returned.");
-            }
+            setConnected(true);
+
+            // Deriv's ticks request takes one symbol per request; do not send an array.
+            unique.forEach((item, index) => {
+              setTimeout(() => {
+                if (!disposed && socket?.readyState === WebSocket.OPEN) {
+                  socket.send(JSON.stringify({ ticks: item.symbol, subscribe: 1, req_id: 1000 + index }));
+                }
+              }, Math.min(index * 30, 6000));
+            });
             return;
           }
 
@@ -108,48 +129,37 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         }
       };
 
-      socket.onerror = () => failCurrentSocket();
+      socket.onerror = () => {
+        if (disposed) return;
+        scheduleNextEndpoint();
+      };
 
       socket.onclose = () => {
-        clearTimeout(timeout);
         if (disposed) return;
         setConnected(false);
-        if (!opened || !symbolsLoaded) failCurrentSocket();
-        else {
+        if (!symbolsLoaded) {
+          scheduleNextEndpoint();
+        } else {
+          clearConnectionTimeout();
           retryTimer = setTimeout(() => {
             endpointIndex = 0;
             connect();
-          }, Math.min(15000, 1000 * (2 ** Math.min(retryCount++, 4))));
+          }, Math.min(30000, 2000 * (2 ** Math.min(retryCount++, 4))));
         }
       };
-    };
-
-    const tryNextEndpoint = () => {
-      if (disposed) return;
-      if (retryTimer) clearTimeout(retryTimer);
-      if (endpointIndex < DERIV_PUBLIC_ENDPOINTS.length - 1) {
-        endpointIndex += 1;
-        retryTimer = setTimeout(connect, 250);
-      } else {
-        setConnected(false);
-        setLoading(false);
-        setError("Unable to connect to Deriv market data. Check your internet connection or network restrictions, then retry.");
-        // Retry the endpoints automatically rather than leaving the screen permanently offline.
-        endpointIndex = 0;
-        retryTimer = setTimeout(connect, Math.min(30000, 2000 * (2 ** Math.min(retryCount++, 4))));
-      }
     };
 
     connect();
     return () => {
       disposed = true;
+      clearConnectionTimeout();
       if (retryTimer) clearTimeout(retryTimer);
       try { socket?.close(); } catch {}
     };
   }, []);
 
   const categories = useMemo(
-    () => ["ALL", ...Array.from(new Set(markets.map(item => item.market).filter(Boolean))).sort()],
+    () => ["ALL", ...Array.from(new Set(markets.map(item => item.market).filter(Boolean))).sort(),
     [markets]
   );
   const visibleMarkets = useMemo(() => {
