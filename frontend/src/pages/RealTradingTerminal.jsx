@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Sidebar from "../components/Sidebar";
+import { supabase } from "../supabaseClient";
 
 const API = import.meta.env.VITE_REAL_TRADING_API_URL || "";
 
@@ -40,9 +41,53 @@ export default function RealTradingTerminal() {
     }
   }
 
-  function enableRealMode() {
-    setArmed(true);
-    setMessage("REAL mode armed. Every order still requires confirmation.");
+  async function authHeaders() {
+    const { data } = await supabase.auth.getSession();
+    const token = data?.session?.access_token;
+    if (!token) throw new Error("AUTH_REQUIRED");
+    return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  }
+
+  async function enableRealMode() {
+    try {
+      if (!API) throw new Error("REAL_TRADING_API_NOT_CONFIGURED");
+      const headers = await authHeaders();
+      const response = await fetch(`${API}/api/real/resume`, { method: "POST", headers });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || "REAL_MODE_ENABLE_FAILED");
+      setArmed(true);
+      setMessage("REAL mode armed. Every order still requires confirmation.");
+    } catch (error) {
+      setMessage(error?.message || "REAL_MODE_ENABLE_FAILED");
+    }
+  }
+
+  async function emergencyStop() {
+    try {
+      if (!API) throw new Error("REAL_TRADING_API_NOT_CONFIGURED");
+      const headers = await authHeaders();
+      const response = await fetch(`${API}/api/real/emergency-stop`, { method: "POST", headers });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || "EMERGENCY_STOP_FAILED");
+      setEmergencyStopped(true);
+      setMessage("Emergency stop active. New live orders are blocked server-side.");
+    } catch (error) {
+      setMessage(error?.message || "EMERGENCY_STOP_FAILED");
+    }
+  }
+
+  async function resumeTrading() {
+    try {
+      if (!API) throw new Error("REAL_TRADING_API_NOT_CONFIGURED");
+      const headers = await authHeaders();
+      const response = await fetch(`${API}/api/real/resume`, { method: "POST", headers });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error || "RESUME_FAILED");
+      setEmergencyStopped(false);
+      setMessage("Trading resumed. Every order still requires confirmation.");
+    } catch (error) {
+      setMessage(error?.message || "RESUME_FAILED");
+    }
   }
 
   return <div className="app-layout">
@@ -67,7 +112,7 @@ export default function RealTradingTerminal() {
           <button className="button danger full" onClick={enableRealMode}>ARM REAL TRADING MODE</button>
         </section> : <section className="panel">
           <div className="page-heading"><div><span className="eyebrow real-eyebrow">REAL EXECUTION PANEL</span><h1>Live Deriv terminal</h1></div>
-            <button className={emergencyStopped ? "button primary" : "button danger"} onClick={() => setEmergencyStopped(v => !v)}>
+            <button className={emergencyStopped ? "button primary" : "button danger"} onClick={emergencyStopped ? resumeTrading : emergencyStop}>
               {emergencyStopped ? "RESUME TRADING" : "EMERGENCY STOP"}
             </button>
           </div>
