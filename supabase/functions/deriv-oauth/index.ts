@@ -5,6 +5,7 @@ const secret = Deno.env.get(["SUPABASE","SERVICE","ROLE","KEY"].join("_"))!;
 const admin = createClient(url, secret, { auth: { persistSession: false } });
 
 const redirect = "https://qalowxnqngzsdlayqivr.supabase.co/functions/v1/deriv-oauth/callback";
+const appUrl = (Deno.env.get("VELTRION_APP_URL") || "https://sendbox-money-profit-delta.vercel.app").replace(/\/$/, "");
 const client = Deno.env.get("DERIV_OAUTH_CLIENT_ID") || Deno.env.get("DERIV_CLIENT_ID") || "34yFXgA3K5sZIE56LQI7J";
 
 const cors = {
@@ -126,7 +127,7 @@ async function callback(code: string, state: string) {
 
   await admin.schema("private").from("deriv_oauth_pending_states").delete().eq("state", state);
 
-  return new Response(null, { status: 303, headers: { ...cors, Location: "https://cyrrenza-v2.github.io/Sendbox-money-profit/deriv/connect?deriv=connected" } });}
+  return new Response(null, { status: 303, headers: { ...cors, Location: `${appUrl}/app/deriv/account?deriv=connected` } });}
 
 Deno.serve(async req => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
