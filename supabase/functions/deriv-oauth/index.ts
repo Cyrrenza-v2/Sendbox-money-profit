@@ -126,11 +126,7 @@ async function callback(code: string, state: string) {
 
   await admin.schema("private").from("deriv_oauth_pending_states").delete().eq("state", state);
 
-  return new Response(
-    "<html><body><h2>VELTRION Deriv connection successful.</h2><p>Redirecting…</p><script>setTimeout(()=>location.href='https://cyrrenza-v2.github.io/Sendbox-money-profit/',1200)</script></body></html>",
-    { headers: { "Content-Type": "text/html; charset=utf-8", ...cors } }
-  );
-}
+  return new Response(null, { status: 303, headers: { ...cors, Location: "https://cyrrenza-v2.github.io/Sendbox-money-profit/deriv/connect?deriv=connected" } });}
 
 Deno.serve(async req => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
