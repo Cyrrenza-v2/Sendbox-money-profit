@@ -4,35 +4,28 @@ import { supabase } from "../supabaseClient";
 export default function Sidebar({ isOpen, onClose }) {
   const navigate = useNavigate();
   const location = useLocation();
-
-  async function logout() {
-    await supabase.auth.signOut();
-    navigate("/login", { replace: true });
-  }
-
+  async function logout() { await supabase.auth.signOut(); navigate("/login", { replace: true }); }
   function go(path) { navigate(path); onClose?.(); }
+  const active = path => location.pathname === path ? "active" : "menu-item";
 
   return <>
     {isOpen && <div className="sidebar-overlay" onClick={onClose} />}
     <aside className={`sidebar ${isOpen ? "open" : ""}`}>
-      <div className="sidebar-header">
-        <div className="brand"><b>VELTRION</b><small>PRIVATE TRADING PLATFORM</small></div>
-        <button className="close-button" onClick={onClose}>✕</button>
-      </div>
+      <div className="sidebar-header"><div className="brand"><b>VELTRION</b><small>PRIVATE TRADING PLATFORM</small></div><button className="close-button" onClick={onClose}>✕</button></div>
       <nav className="sidebar-menu">
-        <button className={location.pathname === "/" ? "active" : ""} onClick={() => go("/")}>HOME</button>
+        <button className={active("/")} onClick={()=>go("/")}>HOME</button>
         <div className="menu-category">TRADING</div>
-        {["Markets","Positions","Orders","History"].map(item =>
-          <button key={item} className="menu-item" onClick={() => alert("Coming in the next system phase")}>{item}</button>
-        )}
+        {["Markets","Positions","Orders","History"].map(item => <button key={item} className="menu-item" onClick={()=>alert("This module is being wired to the connected trading services.")}>{item}</button>)}
         <div className="menu-category">DERIV</div>
-        <button className={location.pathname === "/real-trading" ? "active" : "menu-item"} onClick={() => go("/real-trading")}>Real Trading Terminal</button>
-        <button className="menu-item" onClick={() => alert("Coming in the next system phase")}>Connection</button>
-        <button className="menu-item" onClick={() => alert("Coming in the next system phase")}>Account</button>
-        <div className="menu-category">MT5</div>
-        <button className="menu-item" onClick={() => alert("Coming in the next system phase")}>Virtual Account</button>
+        <button className={active("/real-trading")} onClick={()=>go("/real-trading")}>Real Trading Terminal</button>
+        <button className="menu-item" onClick={()=>alert("Deriv connection is managed by the connected Supabase services.")}>Connection</button>
+        <button className="menu-item" onClick={()=>alert("Deriv account data is available through the connected account service.")}>Account</button>
+        <div className="menu-category">ACCOUNTS</div>
+        <button className={active("/profit-wallet")} onClick={()=>go("/profit-wallet")}>Profit Wallet</button>
+        <div className="menu-category">OPERATIONS</div>
+        <button className={active("/operations")} onClick={()=>go("/operations")}>Operations Control</button>
         <div className="menu-category">SECURITY</div>
-        <button className={location.pathname === "/security" ? "active" : "menu-item"} onClick={() => go("/security")}>Profile &amp; Audit Log</button>
+        <button className={active("/security")} onClick={()=>go("/security")}>Profile &amp; Audit Log</button>
       </nav>
       <button className="logout-button" onClick={logout}>LOG OUT</button>
     </aside>
