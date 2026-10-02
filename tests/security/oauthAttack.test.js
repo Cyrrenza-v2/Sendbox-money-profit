@@ -1,0 +1,3 @@
+import test from "node:test"; import assert from "node:assert/strict"; import {createPkcePair,createOAuthState,validateOAuthCallback} from "../../backend/oauthSecurity.js";
+test("state mismatch is rejected",()=>{const p=createPkcePair();const state=createOAuthState();assert.throws(()=>validateOAuthCallback({expectedState:state,state:"attacker",expectedVerifier:p.verifier,verifier:p.verifier}),/OAUTH_STATE_MISMATCH/);});
+test("PKCE verifier mismatch is rejected",()=>{const p=createPkcePair(),state=createOAuthState();assert.throws(()=>validateOAuthCallback({expectedState:state,state,expectedVerifier:p.verifier,verifier:"attacker"}),/PKCE_VERIFIER_MISMATCH/);});
