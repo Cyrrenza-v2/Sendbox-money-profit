@@ -3,7 +3,7 @@ import Sidebar from "../components/Sidebar";
 import LiveMarketPanel from "../components/LiveMarketPanel";
 import { supabase } from "../supabaseClient";
 
-const API = import.meta.env.VITE_REAL_TRADING_API_URL || "";
+const API = import.meta.env.VITE_REAL_TRADING_API_URL || `${import.meta.env.VITE_SUPABASE_URL || "https://qalowxnqngzsdlayqivr.supabase.co"}/functions/v1/veltrion-gateway-v2`;
 
 export default function RealTradingTerminal() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -28,7 +28,7 @@ export default function RealTradingTerminal() {
     setMessage("Submitting authenticated order…");
     try {
       if (!API) throw new Error("REAL_TRADING_API_NOT_CONFIGURED");
-      const response = await fetch(`${API}/api/real/orders`, {
+      const response = await fetch(`${API}/trading/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -53,7 +53,7 @@ export default function RealTradingTerminal() {
     try {
       if (!API) throw new Error("REAL_TRADING_API_NOT_CONFIGURED");
       const headers = await authHeaders();
-      const response = await fetch(`${API}/api/real/resume`, { method: "POST", headers });
+      const response = await fetch(`${API}/trading/execute/resume`, { method: "POST", headers });
       const body = await response.json();
       if (!response.ok) throw new Error(body?.error || "REAL_MODE_ENABLE_FAILED");
       setArmed(true);
