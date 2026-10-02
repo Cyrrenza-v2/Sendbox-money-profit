@@ -41,3 +41,19 @@ export async function requireActiveSession(req) {
   if (!active) { const error=new Error('SESSION_REVOKED'); error.statusCode=401; throw error; }
   return auth;
 }
+
+
+export async function requireAdmin(req) {
+  const auth = await requireActiveSession(req);
+  if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error('ADMIN_VALIDATION_NOT_CONFIGURED');
+  const url = new URL(`${SUPABASE_URL}/rest/v1/user_roles`);
+  url.searchParams.set('select','role');
+  url.searchParams.set('user_id',`eq.${auth.user.id}`);
+  url.searchParams.set('role','in.(admin,risk_admin,finance_admin,support)');
+  url.searchParams.set('limit','1');
+  const response = await fetch(url,{headers:{apikey:SUPABASE_SERVICE_ROLE_KEY,Authorization:`Bearer ${SUPABASE_SERVICE_ROLE_KEY}`}});
+  if (!response.ok) throw new Error('ADMIN_LOOKUP_FAILED');
+  const rows=await response.json();
+  if (!rows.length) { const error=new Error('ADMIN_REQUIRED'); error.statusCode=403; throw error; }
+  return auth;
+}
