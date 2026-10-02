@@ -9,6 +9,7 @@ import SectionPage from "./pages/SectionPage";
 import TradeTerminal from "./pages/TradeTerminal";
 import SandboxDashboard from "./pages/SandboxDashboard";
 import Mt5ConnectionView from "./pages/Mt5ConnectionView";
+import AIAssistants from "./pages/AIAssistants";
 
 const sections=[
  ["trading/markets","Markets","Live symbols and backend market state."],
@@ -30,6 +31,7 @@ export default function App(){
   <Route path="/connect-deriv/callback" element={<DerivCallback/>}/>
   <Route element={<ProtectedRoute><AppShell/></ProtectedRoute>}>
    <Route path="/app/home" element={<Home/>}/>
+   <Route path="/app/ai-assistants" element={<AIAssistants/>}/>
    <Route path="/app/deriv/account" element={<ConnectDeriv/>}/>
    <Route path="/app/trading/terminal" element={<TradeTerminal/>}/>
    <Route path="/app/sandbox/overview" element={<SandboxDashboard/>}/>
