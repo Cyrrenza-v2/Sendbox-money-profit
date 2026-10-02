@@ -17,32 +17,25 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: frontend
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-
       - name: Install dependencies
         run: npm install
-
       - name: Build frontend
         run: npm run build
-
       - name: Verify build output
         run: |
           test -f dist/index.html
           test -f dist/404.html || cp dist/index.html dist/404.html
           test -s dist/index.html
-
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -52,25 +45,23 @@ jobs:
 
   backend-check:
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: backend
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-
       - name: Install backend dependencies
         run: npm install
-
       - name: Syntax check backend
         run: |
           node --check server.js
+          node --check riskEngine.js
+          node --check healthMonitor.js
+          node --check reconciliationWorker.js
           node --check realExecutionEngine.js
           node --check reconciliationService.js
