@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-const DERIV_PUBLIC_WS = "wss://ws.binaryws.com/websockets/v3";
+const DERIV_PUBLIC_WS = "wss://ws.derivws.com/websockets/v3?app_id=1089";
 
 export default function LiveMarketPanel({ compact = false, selectedSymbol = null, onSymbolChange }) {
   const [markets, setMarkets] = useState([]);
@@ -37,9 +37,8 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
           activeSymbolsLoaded = true;
           setMarkets(unique);
           setLoading(false);
-          unique.forEach((item, index) => {
-            ws.send(JSON.stringify({ ticks: item.symbol, subscribe: 1, req_id: 1000 + index }));
-          });
+          const symbols = unique.map(item => item.symbol);
+          if (symbols.length) ws.send(JSON.stringify({ ticks: symbols, subscribe: 1, req_id: 2 }));
           return;
         }
         if (message.msg_type === "tick" && message.tick) {
