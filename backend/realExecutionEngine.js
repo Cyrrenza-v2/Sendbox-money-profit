@@ -1,4 +1,4 @@
-import WebSocket from "ws";
+const WebSocketClient = globalThis.WebSocket;
 
 const DERIV_REST_URL = process.env.DERIV_REST_URL || "https://api.derivws.com";
 const DERIV_APP_ID = process.env.DERIV_APP_ID;
@@ -7,9 +7,7 @@ const DERIV_API_TOKEN = process.env.DERIV_API_TOKEN;
 const REAL_TRADING_ENABLED = process.env.REAL_TRADING_ENABLED === "true";
 
 function requireEnabled() {
-  if (!REAL_TRADING_ENABLED) {
-    throw new Error("REAL_TRADING_DISABLED");
-  }
+  if (!REAL_TRADING_ENABLED) throw new Error("REAL_TRADING_DISABLED");
   if (!DERIV_APP_ID || !DERIV_ACCOUNT_ID || !DERIV_API_TOKEN) {
     throw new Error("REAL_TRADING_CREDENTIALS_NOT_CONFIGURED");
   }
@@ -36,17 +34,26 @@ async function getAuthenticatedWsUrl() {
 
 function wsRequest(url, request, expectedType) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
+    if (typeof WebSocketClient !== "function") {
+      reject(new Error("WEBSOCKET_RUNTIME_UNAVAILABLE"));
+      return;
+    }
+
+    const ws = new WebSocketClient(url);
     const timeout = setTimeout(() => {
-      ws.close();
+      try { ws.close(); } catch {}
       reject(new Error("DERIV_REQUEST_TIMEOUT"));
     }, 15000);
 
-    ws.on("open", () => ws.send(JSON.stringify(request)));
-    ws.on("message", raw => {
+    ws.addEventListener("open", () => ws.send(JSON.stringify(request)));
+    ws.addEventListener("message", event => {
       let response;
-      try { response = JSON.parse(raw.toString()); }
-      catch { return; }
+      try {
+        const raw = typeof event.data === "string" ? event.data : String(event.data);
+        response = JSON.parse(raw);
+      } catch {
+        return;
+      }
 
       if (response.error) {
         clearTimeout(timeout);
@@ -61,10 +68,11 @@ function wsRequest(url, request, expectedType) {
         resolve(response);
       }
     });
-    ws.on("error", error => {
+
+    ws.addEventListener("error", () => {
       clearTimeout(timeout);
-      ws.close();
-      reject(error);
+      try { ws.close(); } catch {}
+      reject(new Error("DERIV_WEBSOCKET_ERROR"));
     });
   });
 }
