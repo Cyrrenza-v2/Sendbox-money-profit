@@ -17,5 +17,10 @@ function ErrorBoundary({ children }) {
   return children;
 }
 const basename = import.meta.env.BASE_URL === "/" ? "/" : import.meta.env.BASE_URL.replace(/\/$/, "");
-if ("serviceWorker" in navigator && import.meta.env.PROD) window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    const swUrl = new URL("sw.js", window.location.origin + import.meta.env.BASE_URL).toString();
+    navigator.serviceWorker.register(swUrl).catch(() => {});
+  });
+}
 createRoot(document.getElementById("root")).render(<React.StrictMode><ErrorBoundary><BrowserRouter basename={basename}><App /></BrowserRouter></ErrorBoundary></React.StrictMode>);
