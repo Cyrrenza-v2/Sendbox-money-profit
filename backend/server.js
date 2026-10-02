@@ -6,6 +6,8 @@ const HOST = process.env.HOST || "0.0.0.0";
 const REAL_TRADING_ENABLED = process.env.REAL_TRADING_ENABLED === "true";
 const MAX_STAKE = Number(process.env.REAL_MAX_STAKE || 100);
 const DAILY_LOSS_LIMIT = Number(process.env.REAL_DAILY_LOSS_LIMIT || 100);
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 
 let emergencyStopped = true;
 
@@ -25,8 +27,19 @@ function readBody(req) {
   });
 }
 
-function authIsPresent(req) {
-  return Boolean(req.headers.authorization?.startsWith("Bearer "));
+async function authenticate(req) {
+  const authorization = req.headers.authorization;
+  if (!authorization?.startsWith("Bearer ")) return null;
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+
+  const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: {
+      Authorization: authorization,
+      apikey: SUPABASE_ANON_KEY
+    }
+  });
+  if (!response.ok) return null;
+  return response.json();
 }
 
 const engine = new RealExecutionEngine();
@@ -42,19 +55,19 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && req.url === "/api/real/emergency-stop") {
-      if (!authIsPresent(req)) return json(res, 401, { error: "AUTH_REQUIRED" });
+      if (!(await authenticate(req))) return json(res, 401, { error: "AUTH_REQUIRED" });
       emergencyStopped = true;
       return json(res, 200, { ok: true, emergencyStopped });
     }
 
     if (req.method === "POST" && req.url === "/api/real/resume") {
-      if (!authIsPresent(req)) return json(res, 401, { error: "AUTH_REQUIRED" });
+      if (!(await authenticate(req))) return json(res, 401, { error: "AUTH_REQUIRED" });
       emergencyStopped = false;
       return json(res, 200, { ok: true, emergencyStopped });
     }
 
     if (req.method === "POST" && req.url === "/api/real/orders") {
-      if (!authIsPresent(req)) return json(res, 401, { error: "AUTH_REQUIRED" });
+      if (!(await authenticate(req))) return json(res, 401, { error: "AUTH_REQUIRED" });
       if (!REAL_TRADING_ENABLED) return json(res, 503, { error: "REAL_TRADING_DISABLED" });
       if (emergencyStopped) return json(res, 423, { error: "EMERGENCY_STOP_ACTIVE" });
 
