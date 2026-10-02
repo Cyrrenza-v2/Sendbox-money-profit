@@ -8,75 +8,34 @@ export default function Login() {
   const [step, setStep] = useState("email");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  function showError(message) {
-    setError(message);
-    setLoading(false);
-  }
-
   async function continueWithEmail(event) {
     event.preventDefault();
     const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail) return showError("Enter your email address.");
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const { data: users, error: lookupError } = await supabase
-        .from("profiles")
-        .select("user_id")
-        .eq("user_id", "00000000-0000-0000-0000-000000000000")
-        .limit(1);
-
-      // The public client cannot safely enumerate Auth users. The existing
-      // admin account is therefore discovered at sign-in time rather than
-      // exposing an account-registration flow.
-      void users;
-      void lookupError;
-
-      setStep("password");
-    } catch (err) {
-      showError(err?.message || "Unable to continue.");
-    } finally {
-      setLoading(false);
+    if (!normalizedEmail) {
+      setError("Enter your email address.");
+      return;
     }
+    setEmail(normalizedEmail);
+    setError("");
+    setStep("password");
   }
 
-  async function finishSignIn(event) {
+  async function signIn(event) {
     event.preventDefault();
     setLoading(true);
     setError("");
 
-    if (!password) return showError("Enter your password.");
-    if (step === "create-password") {
-      if (password.length < 8) return showError("Password must be at least 8 characters.");
-      if (password !== confirmPassword) return showError("Passwords do not match.");
-    }
-
     try {
       const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: email.trim().toLowerCase(),
         password,
       });
 
-      if (authError) {
-        // Supabase intentionally does not expose whether an email exists.
-        // For the single-owner platform, allow the owner to create the first
-        // password only when the account has not yet been initialized.
-        if (authError.message?.toLowerCase().includes("invalid login credentials")) {
-          setStep("create-password");
-          setPassword("");
-          setConfirmPassword("");
-          setError("Set your VELTRION password to initialize this private account.");
-          return;
-        }
-        throw authError;
-      }
+      if (authError) throw authError;
 
       const { data: roles, error: roleError } = await supabase
         .from("user_roles")
@@ -97,7 +56,7 @@ export default function Login() {
       const { data: sessionData } = await supabase.auth.getSession();
       await supabase.from("user_sessions").insert({
         user_id: data.user.id,
-        session_id: sessionData?.session?.user?.id ? null : null,
+        session_id: sessionData?.session?.access_token ? data.session?.user?.id ?? null : null,
         status: "active",
         last_seen_at: new Date().toISOString(),
         last_active_at: new Date().toISOString(),
@@ -106,7 +65,25 @@ export default function Login() {
 
       navigate("/", { replace: true });
     } catch (err) {
-      showError(err?.message || "Sign in failed.");
+      setError(err?.message || "Sign in failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function sendPasswordSetup() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
+        { redirectTo: window.location.origin + "/login" }
+      );
+      if (resetError) throw resetError;
+      setError("Password setup email sent. Open the link in your email, then create your password.");
+    } catch (err) {
+      setError(err?.message || "Unable to send password setup email.");
     } finally {
       setLoading(false);
     }
@@ -114,10 +91,7 @@ export default function Login() {
 
   return (
     <main className="login-screen">
-      <form
-        className="login-card"
-        onSubmit={step === "email" ? continueWithEmail : finishSignIn}
-      >
+      <form className="login-card" onSubmit={step === "email" ? continueWithEmail : signIn}>
         <div className="brand center">
           <b>VELTRION</b>
           <small>PRIVATE TRADING PLATFORM</small>
@@ -128,8 +102,7 @@ export default function Login() {
           <>
             <h1>Sign in</h1>
             <p className="muted">
-              Enter your authorized email to continue. There is no public
-              registration.
+              Enter your authorized email to continue. There is no public registration.
             </p>
             {error && <div className="error-box">{error}</div>}
             <label>
@@ -144,7 +117,7 @@ export default function Login() {
               />
             </label>
             <button className="button primary" disabled={loading}>
-              {loading ? "VERIFYING…" : "CONTINUE"}
+              CONTINUE
             </button>
           </>
         )}
@@ -172,6 +145,9 @@ export default function Login() {
             <button className="button primary" disabled={loading}>
               {loading ? "VERIFYING…" : "SIGN IN"}
             </button>
+            <button type="button" className="button secondary" onClick={sendPasswordSetup} disabled={loading}>
+              CREATE / RESET PASSWORD
+            </button>
             <button
               type="button"
               className="button secondary"
@@ -182,47 +158,6 @@ export default function Login() {
               }}
             >
               CHANGE EMAIL
-            </button>
-          </>
-        )}
-
-        {step === "create-password" && (
-          <>
-            <h1>Create password</h1>
-            <p className="muted">
-              This initializes the password for the existing private owner
-              account. No public account will be created.
-            </p>
-            {error && <div className="error-box">{error}</div>}
-            <label>
-              Email
-              <input type="email" value={email} readOnly />
-            </label>
-            <label>
-              Create password
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="new-password"
-                autoFocus
-                minLength={8}
-                required
-              />
-            </label>
-            <label>
-              Confirm password
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                autoComplete="new-password"
-                minLength={8}
-                required
-              />
-            </label>
-            <button className="button primary" disabled={loading}>
-              {loading ? "SETTING PASSWORD…" : "CREATE PASSWORD & SIGN IN"}
             </button>
           </>
         )}
