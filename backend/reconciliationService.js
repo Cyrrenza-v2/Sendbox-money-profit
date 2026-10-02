@@ -1,4 +1,4 @@
-import WebSocket from "ws";
+const WebSocketClient = globalThis.WebSocket;
 
 const DERIV_REST_URL = process.env.DERIV_REST_URL || "https://api.derivws.com";
 const DERIV_APP_ID = process.env.DERIV_APP_ID;
@@ -20,15 +20,25 @@ async function getWsUrl() {
 
 function request(url, payload, type) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
+    if (typeof WebSocketClient !== "function") {
+      reject(new Error("WEBSOCKET_RUNTIME_UNAVAILABLE"));
+      return;
+    }
+    const ws = new WebSocketClient(url);
     const timer = setTimeout(() => { ws.close(); reject(new Error("DERIV_REQUEST_TIMEOUT")); }, 15000);
-    ws.on("open", () => ws.send(JSON.stringify(payload)));
-    ws.on("message", raw => {
-      const data = JSON.parse(raw.toString());
+    ws.addEventListener("open", () => ws.send(JSON.stringify(payload)));
+    ws.addEventListener("message", event => {
+      let data;
+      try {
+        const raw = typeof event.data === "string" ? event.data : String(event.data);
+        data = JSON.parse(raw);
+      } catch {
+        return;
+      }
       if (data.error) { clearTimeout(timer); ws.close(); reject(new Error(data.error.message)); return; }
       if (data.msg_type === type) { clearTimeout(timer); ws.close(); resolve(data); }
     });
-    ws.on("error", error => { clearTimeout(timer); ws.close(); reject(error); });
+    ws.addEventListener("error", () => { clearTimeout(timer); try { ws.close(); } catch {} reject(new Error("DERIV_WEBSOCKET_ERROR")); });
   });
 }
 
