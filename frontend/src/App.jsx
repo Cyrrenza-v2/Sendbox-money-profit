@@ -3,6 +3,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Security from "./pages/Security";
+import RealTradingTerminal from "./pages/RealTradingTerminal";
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
       <Route element={<ProtectedRoute />}>
         <Route path="/" element={<Home />} />
         <Route path="/security" element={<Security />} />
+        <Route path="/real-trading" element={<RealTradingTerminal />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
