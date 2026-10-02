@@ -1,0 +1,11 @@
+import type { CapacitorConfig } from "@capacitor/cli";
+const config: CapacitorConfig = {
+  appId: "com.veltrion.app",
+  appName: "VELTRION",
+  webDir: "dist",
+  server: {
+    url: "https://sendbox-money-profit-60dvuwc4u-uasianubong-2840.vercel.app",
+    cleartext: false
+  }
+};
+export default config;
