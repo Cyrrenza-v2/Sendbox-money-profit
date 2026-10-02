@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Sidebar from "../components/Sidebar";
+import LiveMarketPanel from "../components/LiveMarketPanel";
 import { supabase } from "../supabaseClient";
 
 const money = (value) => value == null ? "$0.00" : Number(value).toLocaleString("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2});
@@ -34,7 +35,7 @@ export default function Home() {
     <div className="app-main">
       <header className="topbar"><button className="menu-button" onClick={()=>setSidebarOpen(true)}>☰</button><span className="topbar-brand">VELTRION</span><span className="admin-badge">● ADMIN</span></header>
       <main className="content">
-        <section className="page-heading"><div><span className="eyebrow">PHASE 1 / COMMAND CENTER</span><h1>Home</h1><p>Private admin dashboard with sandbox-only capital.</p></div><span className="live-badge">● AUTHENTICATED</span></section>
+        <section className="page-heading"><div><span className="eyebrow">PHASE 6 / COMMAND CENTER</span><h1>Home</h1><p>Sandbox capital stays virtual while live Deriv market data streams below.</p></div><span className="live-badge">● SUPABASE AUTHENTICATED</span></section>
         {error&&<div className="error-panel"><b>Sandbox data unavailable</b><p>{error}</p><button className="button primary" onClick={loadSandbox}>RETRY</button></div>}
         {loading?<div className="loading-panel">Loading VELTRION…</div>:<>
           <div className="metric-grid">
@@ -43,14 +44,17 @@ export default function Home() {
             <Metric label="STARTING CAPITAL" value={money(initial)} sub="Initial virtual capital"/>
             <Metric label="STATUS" value={String(sandbox?.status||"ACTIVE").toUpperCase()} sub="Sandbox account"/>
           </div>
+          <LiveMarketPanel compact />
           <div className="panel"><div className="panel-title">CONNECTIONS</div>
-            <div className="connection-row"><div><strong>DERIV</strong><span>Real connection is not active in Phase 1.</span></div><b className="offline">○ NOT CONNECTED</b></div>
+            <div className="connection-row"><div><strong>SUPABASE</strong><span>Auth and sandbox data are connected to the project database.</span></div><b className="active-text">● CONNECTED</b></div>
             <div className="divider"/>
-            <div className="connection-row"><div><strong>MT5</strong><span>Virtual account connection is reserved for the next phase.</span></div><b className="offline">○ NOT CONNECTED</b></div>
+            <div className="connection-row"><div><strong>DERIV MARKET</strong><span>Public live quotes stream directly from Deriv's no-auth market channel.</span></div><b className="active-text">● STREAMING</b></div>
+            <div className="divider"/>
+            <div className="connection-row"><div><strong>REAL EXECUTION</strong><span>Server-side credentials are isolated; live execution remains locked until configured.</span></div><b className="offline">● LOCKED</b></div>
           </div>
           <div className="panel"><div className="panel-title">TRADING OVERVIEW</div>
             <div className="metric-list"><div><span>Today's P/L</span><strong>{money(0)}</strong></div><div><span>Open Positions</span><strong>0</strong></div><div><span>Available Capital</span><strong>{money(available)}</strong></div></div>
-            <button className="button primary full" onClick={()=>alert("Coming in the next system phase")}>OPEN TRADING</button>
+            <button className="button danger full" onClick={()=>window.location.hash="/real-trading"}>OPEN REAL TRADING TERMINAL</button>
           </div>
         </>}
       </main>
