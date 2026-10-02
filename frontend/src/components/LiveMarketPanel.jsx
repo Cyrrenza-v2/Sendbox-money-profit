@@ -159,7 +159,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
   }, []);
 
   const categories = useMemo(
-    () => ["ALL", ...Array.from(new Set(markets.map(item => item.market).filter(Boolean))).sort(),
+    () => ["ALL", ...Array.from(new Set(markets.map(item => item.market).filter(Boolean))).sort()],
     [markets]
   );
   const visibleMarkets = useMemo(() => {
