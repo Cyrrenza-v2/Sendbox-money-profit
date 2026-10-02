@@ -26,6 +26,7 @@ export default function Sidebar({ isOpen, onClose }) {
           <button key={item} className="menu-item" onClick={() => alert("Coming in the next system phase")}>{item}</button>
         )}
         <div className="menu-category">DERIV</div>
+        <button className={location.pathname === "/real-trading" ? "active" : "menu-item"} onClick={() => go("/real-trading")}>Real Trading Terminal</button>
         <button className="menu-item" onClick={() => alert("Coming in the next system phase")}>Connection</button>
         <button className="menu-item" onClick={() => alert("Coming in the next system phase")}>Account</button>
         <div className="menu-category">MT5</div>
