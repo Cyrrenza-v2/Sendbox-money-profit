@@ -12,13 +12,31 @@ export default function ConnectDeriv() {
 
   const load=async()=>{
     try{
-      const {data,error}=await supabase.from("deriv_connections")
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!session?.user) {
+        setAccount(null);
+        setStatus("NOT CONNECTED");
+        return;
+      }
+
+      // Always scope this lookup to the signed-in VELTRION owner. The table can
+      // contain rows for other users, so an unfiltered maybeSingle() can fail.
+      const { data, error } = await supabase.from("deriv_connections")
         .select("status,deriv_loginid,currency,last_success_at,last_verified_at,last_error")
+        .eq("user_id", session.user.id)
+        .order("updated_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
-      if(error) throw error;
-      setStatus(String(data?.status||"NOT CONNECTED").toUpperCase());
-      setAccount(data||null);
-    }catch(e){setError(e.message||"Unable to load Deriv connection.");setStatus("ERROR");}
+      if (error) throw error;
+
+      setAccount(data || null);
+      setStatus(String(data?.status || "NOT CONNECTED").toUpperCase());
+      if (data?.last_error) setError(String(data.last_error));
+    }catch(e){
+      setError(e.message||"Unable to load Deriv connection.");
+      setStatus("ERROR");
+    }
   };
 
   useEffect(()=>{
