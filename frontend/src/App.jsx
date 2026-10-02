@@ -7,6 +7,7 @@ import Security from "./pages/Security";
 import RealTradingTerminal from "./pages/RealTradingTerminal";
 import ProfitWalletView from "./pages/ProfitWalletView";
 import OperationsControlView from "./pages/OperationsControlView";
+import AnalyticsOverviewView from "./pages/AnalyticsOverviewView";
 import ConnectDeriv from "./pages/ConnectDeriv";
 import WorkspacePage from "./pages/WorkspacePage";
 
@@ -26,16 +27,18 @@ const screens = [
  ["/app/security/overview","Security","security"],
  ["/app/settings","Settings","settings"]
 ];
+
 export default function App(){
  return <Routes>
   <Route path="/login" element={<Login/>}/>
   <Route element={<ProtectedRoute/>}>
    <Route element={<AppShell/>}>
-    {screens.map(([path,title,section])=>section==="home"
-      ? <Route key={path} path={path} element={<Home/>}/>
-      : section==="deriv"
-        ? <Route key={path} path={path} element={<ConnectDeriv/>}/>
-        : <Route key={path} path={path} element={<WorkspacePage title={title} section={section}/>}/>)}
+    {screens.map(([path,title,section]) =>
+      section==="home" ? <Route key={path} path={path} element={<Home/>}/> :
+      section==="analytics" ? <Route key={path} path={path} element={<AnalyticsOverviewView/>}/> :
+      section==="deriv" ? <Route key={path} path={path} element={<ConnectDeriv/>}/> :
+      <Route key={path} path={path} element={<WorkspacePage title={title} section={section}/>}
+    )}
     <Route path="/app/operations/alerts" element={<WorkspacePage title="Operations Alerts" section="alerts"/>}/>
     <Route path="/" element={<Navigate to="/app/home" replace/>}/>
    </Route>
