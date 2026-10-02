@@ -1,13 +1,12 @@
 import { supabase } from "../supabaseClient";
 
-const API_BASE = "https://qalowxnqngzsdlayqivr.supabase.co/functions/v1/veltrion-api";
-const HOME_SUMMARY = "https://qalowxnqngzsdlayqivr.supabase.co/functions/v1/home-summary";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://qalowxnqngzsdlayqivr.supabase.co";
+const API_BASE = `${SUPABASE_URL}/functions/v1/veltrion-gateway-v2`;
 
 export async function api(path, options = {}) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new Error("AUTH_REQUIRED");
-  const base = path === "/home-summary" ? HOME_SUMMARY : API_BASE;
-  const response = await fetch(base + (path === "/home-summary" ? "" : path), {
+  const response = await fetch(API_BASE + path, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -19,3 +18,5 @@ export async function api(path, options = {}) {
   if (!response.ok) throw new Error(body.error || body.message || `API ${response.status}`);
   return body;
 }
+
+export const gatewayBaseUrl = API_BASE;
