@@ -14,13 +14,37 @@
   </style>
 </head>
 <body>
-  <main><div class="card"><b>VELTRION</b><p>Verifying Deriv authorization…</p></div></main>
+  <main><div class="card"><b>VELTRION</b><p id="status">Verifying Deriv authorization…</p></div></main>
   <script>
-    (function () {
-      const target = "/Sendbox-money-profit/connect-deriv/callback";
-      const query = window.location.search || "";
-      const hash = window.location.hash || "";
-      window.location.replace(target + query + hash);
+    (async function () {
+      const status = document.getElementById('status');
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const state = params.get('state');
+      const error = params.get('error');
+      if (error) {
+        status.textContent = 'Deriv authorization was not completed: ' + error;
+        return;
+      }
+      if (!code || !state) {
+        status.textContent = 'Missing Deriv authorization code or state.';
+        return;
+      }
+      try {
+        const response = await fetch('https://qalowxnqngzsdlayqivr.supabase.co/functions/v1/deriv-oauth/callback', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({code, state})
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !body.ok) {
+          throw new Error(body.error || 'Deriv authorization could not be completed.');
+        }
+        status.textContent = 'Deriv account connected. Returning to VELTRION…';
+        window.location.replace('/Sendbox-money-profit/');
+      } catch (e) {
+        status.textContent = e.message || 'Deriv authorization failed.';
+      }
     })();
   </script>
 </body>
