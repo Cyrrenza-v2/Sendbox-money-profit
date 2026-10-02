@@ -1,24 +1,23 @@
 -- VELTRION Phase 6: isolated real-money trading ledger.
--- Run only after reviewing this schema in Supabase SQL Editor.
--- IMPORTANT: the real execution service must remain disabled until production
--- credentials, risk limits, authentication, and operational controls are verified.
+-- Canonical schema for the connected Supabase project.
+-- Real execution remains disabled until backend-only Deriv credentials are configured.
 
 create extension if not exists pgcrypto;
 
 create table if not exists public.real_trading_accounts (
   id uuid primary key default gen_random_uuid(),
-  admin_id uuid references public.admin_users(id) on delete cascade not null,
+  user_id uuid not null references auth.users(id) on delete cascade,
   deriv_account_id text not null,
   currency text not null default 'USD',
   balance numeric(15,2) not null default 0 check (balance >= 0),
   equity numeric(15,2) not null default 0,
   is_active boolean not null default false,
-  emergency_stopped boolean not null default false,
+  emergency_stopped boolean not null default true,
   max_stake numeric(15,2) not null default 100 check (max_stake > 0),
   daily_loss_limit numeric(15,2) not null default 100 check (daily_loss_limit > 0),
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
-  unique(admin_id, deriv_account_id)
+  unique(user_id, deriv_account_id)
 );
 
 create table if not exists public.real_orders (
@@ -54,7 +53,7 @@ create table if not exists public.real_ledger (
 create table if not exists public.real_trading_audit (
   id uuid primary key default gen_random_uuid(),
   account_id uuid references public.real_trading_accounts(id) on delete cascade not null,
-  admin_id uuid references public.admin_users(id) on delete cascade not null,
+  user_id uuid references auth.users(id) on delete cascade not null,
   action text not null,
   result text not null,
   metadata jsonb not null default '{}'::jsonb,
@@ -73,46 +72,36 @@ alter table public.real_orders enable row level security;
 alter table public.real_ledger enable row level security;
 alter table public.real_trading_audit enable row level security;
 
-drop policy if exists "Admin access real accounts" on public.real_trading_accounts;
-create policy "Admin access real accounts"
-on public.real_trading_accounts for all
-using (admin_id in (
-  select id from public.admin_users where user_id = auth.uid()
-))
-with check (admin_id in (
-  select id from public.admin_users where user_id = auth.uid()
-));
+drop policy if exists "User read real accounts" on public.real_trading_accounts;
+create policy "User read real accounts"
+on public.real_trading_accounts for select
+to authenticated
+using (auth.uid() = user_id);
 
-drop policy if exists "Admin access real orders" on public.real_orders;
-create policy "Admin access real orders"
-on public.real_orders for all
-using (account_id in (
-  select id from public.real_trading_accounts
-  where admin_id in (select id from public.admin_users where user_id = auth.uid())
-))
-with check (account_id in (
-  select id from public.real_trading_accounts
-  where admin_id in (select id from public.admin_users where user_id = auth.uid())
-));
+drop policy if exists "User read real orders" on public.real_orders;
+create policy "User read real orders"
+on public.real_orders for select
+to authenticated
+using (
+  account_id in (
+    select id from public.real_trading_accounts where user_id = auth.uid()
+  )
+);
 
-drop policy if exists "Admin access real ledger" on public.real_ledger;
-create policy "Admin access real ledger"
-on public.real_ledger for all
-using (account_id in (
-  select id from public.real_trading_accounts
-  where admin_id in (select id from public.admin_users where user_id = auth.uid())
-))
-with check (account_id in (
-  select id from public.real_trading_accounts
-  where admin_id in (select id from public.admin_users where user_id = auth.uid())
-));
+drop policy if exists "User read real ledger" on public.real_ledger;
+create policy "User read real ledger"
+on public.real_ledger for select
+to authenticated
+using (
+  account_id in (
+    select id from public.real_trading_accounts where user_id = auth.uid()
+  )
+);
 
-drop policy if exists "Admin access real audit" on public.real_trading_audit;
-create policy "Admin access real audit"
-on public.real_trading_audit for all
-using (admin_id in (
-  select id from public.admin_users where user_id = auth.uid()
-))
-with check (admin_id in (
-  select id from public.admin_users where user_id = auth.uid()
-));
+drop policy if exists "User read real audit" on public.real_trading_audit;
+create policy "User read real audit"
+on public.real_trading_audit for select
+to authenticated
+using (auth.uid() = user_id);
+
+grant select on public.real_trading_accounts, public.real_orders, public.real_ledger, public.real_trading_audit to authenticated;
