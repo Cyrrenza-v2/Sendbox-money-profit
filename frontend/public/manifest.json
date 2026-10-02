@@ -2,12 +2,12 @@
   "short_name":"VELTRION",
   "name":"VELTRION Private Trading & Financial Control Platform",
   "description":"Secure Trading Platform & Administrative Engine",
-  "start_url":"/",
-  "scope":"/",
+  "start_url":"./",
+  "scope":"./",
   "display":"standalone",
   "background_color":"#07110d",
   "theme_color":"#07110d",
   "icons":[
-    {"src":"/favicon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+    {"src":"icon-only.svg","sizes":"512x512","type":"image/svg+xml","purpose":"any maskable"}
   ]
 }
