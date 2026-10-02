@@ -1,4 +1,7 @@
 import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { RealExecutionEngine } from "./realExecutionEngine.js";
 import { riskEngine } from "./riskEngine.js";
 
@@ -8,6 +11,9 @@ const REAL_TRADING_ENABLED = process.env.REAL_TRADING_ENABLED === "true";
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const STATIC_ROOT = path.join(__dirname, "dist");
+const MIME_TYPES = { ".html":"text/html; charset=utf-8", ".js":"text/javascript; charset=utf-8", ".mjs":"text/javascript; charset=utf-8", ".css":"text/css; charset=utf-8", ".json":"application/json; charset=utf-8", ".svg":"image/svg+xml", ".png":"image/png", ".jpg":"image/jpeg", ".jpeg":"image/jpeg", ".webp":"image/webp", ".ico":"image/x-icon", ".woff":"font/woff", ".woff2":"font/woff2" };
 
 function json(res, status, body) {
   res.writeHead(status, {"content-type":"application/json; charset=utf-8"});
@@ -63,6 +69,22 @@ const engine = new RealExecutionEngine();
 loadGlobalStop().catch(() => riskEngine.setEmergencyStop(true));
 
 const server = http.createServer(async (req,res) => {
+  try {
+    // Vercel sends browser requests to this Node entrypoint. Serve the Vite build here.
+    if (req.method === "GET" && !req.url.startsWith("/api/") && req.url !== "/health") {
+      const requested = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
+      const relative = requested === "/" ? "index.html" : requested.replace(/^\/+/, "");
+      const candidate = path.resolve(STATIC_ROOT, relative);
+      if (candidate.startsWith(STATIC_ROOT + path.sep) && fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+        res.writeHead(200, { "content-type": MIME_TYPES[path.extname(candidate).toLowerCase()] || "application/octet-stream", "cache-control": candidate.endsWith("index.html") ? "no-cache" : "public, max-age=31536000, immutable" });
+        return fs.createReadStream(candidate).pipe(res);
+      }
+      const indexFile = path.join(STATIC_ROOT, "index.html");
+      if (fs.existsSync(indexFile)) {
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
+        return fs.createReadStream(indexFile).pipe(res);
+      }
+    }
   try {
     if (req.method==="GET" && req.url==="/health") return json(res,200,{ok:true,realTradingEnabled:REAL_TRADING_ENABLED,emergencyStopped:riskEngine.isEmergencyStopped()});
     if (req.method==="POST" && req.url==="/api/operations/emergency-stop") {
