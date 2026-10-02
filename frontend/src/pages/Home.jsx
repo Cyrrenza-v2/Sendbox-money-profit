@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import LiveMarketPanel from "../components/LiveMarketPanel";
 import { supabase } from "../supabaseClient";
@@ -6,6 +7,7 @@ import { supabase } from "../supabaseClient";
 const money = (value) => value == null ? "$0.00" : Number(value).toLocaleString("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2});
 
 export default function Home() {
+  const navigate = useNavigate();
   const [sidebarOpen,setSidebarOpen]=useState(false);
   const [sandbox,setSandbox]=useState(null);
   const [loading,setLoading]=useState(true);
@@ -54,7 +56,7 @@ export default function Home() {
           </div>
           <div className="panel"><div className="panel-title">TRADING OVERVIEW</div>
             <div className="metric-list"><div><span>Today's P/L</span><strong>{money(0)}</strong></div><div><span>Open Positions</span><strong>0</strong></div><div><span>Available Capital</span><strong>{money(available)}</strong></div></div>
-            <button className="button danger full" onClick={()=>window.location.hash="/real-trading"}>OPEN REAL TRADING TERMINAL</button>
+            <button className="button danger full" onClick={()=>navigate("/real-trading")}>OPEN REAL TRADING TERMINAL</button>
           </div>
         </>}
       </main>
