@@ -16,4 +16,5 @@ function ErrorBoundary({ children }) {
   if (error) return <div className="app-error"><div><b>VELTRION</b><h1>Frontend loaded with an error</h1><p>{error.message || "Unknown frontend error"}</p><button onClick={() => window.location.reload()}>RELOAD VELTRION</button></div></div>;
   return children;
 }
-createRoot(document.getElementById("root")).render(<React.StrictMode><ErrorBoundary><BrowserRouter basename="/Sendbox-money-profit"><App /></BrowserRouter></ErrorBoundary></React.StrictMode>);
+const basename = import.meta.env.BASE_URL === "/" ? "/" : import.meta.env.BASE_URL.replace(/\/$/, "");
+createRoot(document.getElementById("root")).render(<React.StrictMode><ErrorBoundary><BrowserRouter basename={basename}><App /></BrowserRouter></ErrorBoundary></React.StrictMode>);
