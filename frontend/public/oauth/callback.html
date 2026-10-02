@@ -41,7 +41,7 @@
           throw new Error(body.error || 'Deriv authorization could not be completed.');
         }
         status.textContent = 'Deriv account connected. Returning to VELTRION…';
-        window.location.replace('/Sendbox-money-profit/');
+        window.location.replace('https://sendbox-money-profit-delta.vercel.app/app/deriv/account?deriv=connected');
       } catch (e) {
         status.textContent = e.message || 'Deriv authorization failed.';
       }
