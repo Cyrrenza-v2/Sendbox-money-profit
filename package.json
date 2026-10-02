@@ -1,8 +1,10 @@
 {
-  "name": "veltrion-vercel-root",
-  "private": true,
-  "version": "1.0.0",
-  "scripts": {
-    "build": "npm --prefix frontend run build"
+  "name":"veltrion-vercel-root",
+  "private":true,
+  "version":"1.0.0",
+  "scripts":{
+    "build":"npm --prefix frontend run build",
+    "test":"npm --prefix frontend run test --if-present",
+    "lint":"npm --prefix frontend run lint --if-present"
   }
 }
