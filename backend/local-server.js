@@ -109,7 +109,6 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && req.url === "/api/real/orders") {
       const auth = await requireAdmin(req);
-      const user = auth.user;
       const body = await readBody(req);
       if (!REAL_TRADING_ENABLED) return json(res, 503, { error: "REAL_TRADING_DISABLED" });
       if (body.mode !== "REAL" || body.confirmation !== "EXPLICIT") return json(res, 400, { error: "EXPLICIT_REAL_CONFIRMATION_REQUIRED" });
@@ -123,7 +122,8 @@ const server = http.createServer(async (req, res) => {
 
     return json(res, 404, { error: "NOT_FOUND" });
   } catch (error) {
-    return json(res, 500, { error: error?.message || "INTERNAL_ERROR" });
+    const status = Number(error?.statusCode) || (error?.code === "VALIDATION_FAILED" ? 400 : 500);
+    return json(res, status, { error: error?.message || "INTERNAL_ERROR" });
   }
 });
 
