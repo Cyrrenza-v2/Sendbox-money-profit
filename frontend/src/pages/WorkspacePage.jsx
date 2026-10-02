@@ -7,7 +7,11 @@ const configBySection = {
  history:{intro:"Historical activity from the connected trading service.",source:"trading service"},
  mt5:{intro:"MT5 connection and infrastructure state.",source:"mt5_connections"},
  sandbox:{intro:"Virtual account state and sandbox controls.",source:"sandbox_accounts"},
+ real:{intro:"Real account configuration and account provisioning state. Live execution remains subject to server-side safeguards.",source:"real_trading_accounts / app_settings"},
+ wallet:{intro:"Reconciled real-account profit wallet only. Sandbox funds are not withdrawable.",source:"real_profit_wallets / withdrawals"},
  analytics:{intro:"Performance metrics derived from recorded account activity.",source:"backend analytics"},
+ operations:{intro:"Service health, emergency controls, risk limits, and active alerts.",source:"system_health / emergency_controls / risk_limits / system_alerts"},
+ security:{intro:"Authenticated sessions and account-scoped audit events.",source:"user_sessions / audit_events"},
  settings:{intro:"Application configuration managed by the backend.",source:"app_settings"},
  alerts:{intro:"Recent system and operational alerts.",source:"audit_logs"}
 };
@@ -18,12 +22,28 @@ export default function WorkspacePage({title,section}){
  let data=null,error=null;
  if(section==="markets"){const r=await supabase.from("market_symbols").select("*").limit(30);data=r.data;error=r.error;}
  else if(section==="positions"){const r=await supabase.from("sandbox_positions").select("*").order("updated_at",{ascending:false}).limit(50);data=r.data;error=r.error;}
- else {const {data:{user}}=await supabase.auth.getUser();if(!user)throw new Error("Your session has expired. Sign in again.");
- if(section==="mt5"){const r=await supabase.from("mt5_connections").select("status,server,last_heartbeat_at,environment").eq("user_id",user.id).maybeSingle();data=r.data;error=r.error;}
- else if(section==="sandbox"){const r=await supabase.from("sandbox_accounts").select("id,currency,initial_capital,available_capital,allocated_capital,withdrawable,status,updated_at").eq("user_id",user.id).maybeSingle();data=r.data;error=r.error;}
- else if(section==="settings"){const r=await supabase.from("app_settings").select("environment,trading_mode,real_trading_enabled,updated_at").order("updated_at",{ascending:false}).limit(1).maybeSingle();data=r.data;error=r.error;}
- else if(section==="alerts"){const r=await supabase.from("audit_logs").select("id,action,created_at,status,details").order("created_at",{ascending:false}).limit(20);data=r.data;error=r.error;}
- else data=null;
+ else {
+  const {data:{user}}=await supabase.auth.getUser();if(!user)throw new Error("Your session has expired. Sign in again.");
+  if(section==="mt5"){const r=await supabase.from("mt5_connections").select("status,server,last_heartbeat_at,environment").eq("user_id",user.id).maybeSingle();data=r.data;error=r.error;}
+  else if(section==="sandbox"){const r=await supabase.from("sandbox_accounts").select("id,currency,initial_capital,available_capital,allocated_capital,withdrawable,status,updated_at").eq("user_id",user.id).maybeSingle();data=r.data;error=r.error;}
+  else if(section==="settings"){const r=await supabase.from("app_settings").select("environment,trading_mode,real_trading_enabled,updated_at").order("updated_at",{ascending:false}).limit(1).maybeSingle();data=r.data;error=r.error;}
+  else if(section==="real"){const [account,settings]=await Promise.all([
+    supabase.from("real_trading_accounts").select("id,currency,status,created_at,updated_at").eq("user_id",user.id).maybeSingle(),
+    supabase.from("app_settings").select("environment,trading_mode,real_trading_enabled,updated_at").order("updated_at",{ascending:false}).limit(1).maybeSingle()
+  ]);if(account.error)throw account.error;if(settings.error)throw settings.error;data={account:account.data,configuration:settings.data};}
+  else if(section==="wallet"){const {data:account,error:accountError}=await supabase.from("real_trading_accounts").select("id,currency").eq("user_id",user.id).maybeSingle();if(accountError)throw accountError;if(!account){data=null;}else{const {data:wallet,error:walletError}=await supabase.from("real_profit_wallets").select("id,available_balance,reserved_balance,currency,updated_at").eq("account_id",account.id).maybeSingle();if(walletError)throw walletError;if(!wallet){data=null;}else{const {data:withdrawals,error:withdrawalsError}=await supabase.from("withdrawals").select("id,amount,status,destination_type,requested_at,completed_at").eq("wallet_id",wallet.id).order("requested_at",{ascending:false}).limit(20);if(withdrawalsError)throw withdrawalsError;data={wallet,withdrawals:withdrawals||[]};}}}
+  else if(section==="security"){const [sessions,audit]=await Promise.all([
+    supabase.from("user_sessions").select("id,status,last_seen_at,created_at").eq("user_id",user.id).order("created_at",{ascending:false}).limit(20),
+    supabase.from("audit_events").select("action,source,environment,result,created_at").eq("user_id",user.id).order("created_at",{ascending:false}).limit(20)
+  ]);if(sessions.error)throw sessions.error;if(audit.error)throw audit.error;data={sessions:sessions.data||[],auditEvents:audit.data||[]};}
+  else if(section==="operations"){const [health,controls,limits,alerts]=await Promise.all([
+    supabase.from("system_health").select("service_name,status,last_heartbeat,metadata").order("service_name"),
+    supabase.from("emergency_controls").select("control_key,is_active,updated_at").order("control_key"),
+    supabase.from("risk_limits").select("metric,limit_value,period,enabled").is("user_id",null).order("metric"),
+    supabase.from("system_alerts").select("severity,title,message,is_resolved,created_at").eq("is_resolved",false).order("created_at",{ascending:false}).limit(20)
+  ]);const errors=[health,controls,limits,alerts].filter(x=>x.error);if(errors.length)throw errors[0].error;data={health:health.data||[],emergencyControls:controls.data||[],riskLimits:limits.data||[],activeAlerts:alerts.data||[]};}
+  else if(section==="alerts"){const r=await supabase.from("audit_logs").select("id,action,created_at,status,details").order("created_at",{ascending:false}).limit(20);data=r.data;error=r.error;}
+  else if(section==="orders"||section==="history"||section==="analytics"){data=null;}
  }
  if(error)throw error;if(alive)setState({loading:false,error:"",data});
  }catch(e){if(alive)setState({loading:false,error:e?.message||"Unable to load backend data.",data:null});}}
@@ -31,6 +51,6 @@ export default function WorkspacePage({title,section}){
  const rows=Array.isArray(state.data)?state.data:state.data&&typeof state.data==="object"?Object.entries(state.data).map(([field,value])=>({field,value})):[];
  return <div className="vel-page"><div className="vel-page-heading"><div><div className="vel-eyebrow">VELTRION / OPERATIONS PLATFORM</div><h1>{title}</h1><p>{config.intro}</p></div><span className="vel-data-source">SOURCE · {config.source}</span></div>
  {state.loading?<div className="vel-panel vel-state">Loading authorized backend data…</div>:state.error?<div className="vel-panel vel-error"><b>Data unavailable</b><p>{state.error}</p><small>No sample values are being shown.</small></div>:!state.data||(Array.isArray(state.data)&&state.data.length===0)?<div className="vel-panel vel-state"><div className="vel-state-mark">—</div><h3>No records returned</h3><p>The connected backend did not return data for this view. This is not a fabricated zero balance.</p></div>:<div className="vel-panel"><div className="vel-panel-title">BACKEND RESPONSE <span>{rows.length} FIELD{rows.length===1?"":"S"}</span></div>
- {Array.isArray(state.data)?<div className="vel-table-wrap"><table className="vel-table"><thead><tr>{Object.keys(state.data[0]||{}).slice(0,6).map(k=><th key={k}>{k.replaceAll("_"," ")}</th>)}</tr></thead><tbody>{state.data.map((row,i)=><tr key={row.id||row.symbol||i}>{Object.keys(state.data[0]||{}).slice(0,6).map(k=><td key={k}>{row[k]==null?"—":typeof row[k]==="object"?JSON.stringify(row[k]):String(row[k])}</td>)}</tr>)}</tbody></table></div>:<div className="vel-data-grid">{rows.map(row=><div className="vel-data-field" key={row.field}><span>{row.field.replaceAll("_"," ")}</span><strong>{row.value==null||row.value===""?"Unavailable":typeof row.value==="object"?JSON.stringify(row.value):String(row.value)}</strong></div>)}</div>}</div>}
+ {Array.isArray(state.data)?<div className="vel-table-wrap"><table className="vel-table"><thead><tr>{Object.keys(state.data[0]||{}).slice(0,6).map(k=><th key={k}>{k.replaceAll("_"," ")}</th>)}</tr></thead><tbody>{state.data.map((row,i)=><tr key={row.id||row.symbol||i}>{Object.keys(state.data[0]||{}).slice(0,6).map(k=><td key={k}>{row[k]==null?"—":typeof row[k]==="object"?JSON.stringify(row[k]):String(row[k])}</td>)}</tr>)}</tbody></table></div>:<div className="vel-data-grid">{rows.map(row=><div className="vel-data-field" key={row.field}><span>{row.field.replaceAll("_"," ")}</span><strong>{row.value==null||row.value===""?"Unavailable":Array.isArray(row.value)?row.value.length+" records":typeof row.value==="object"?JSON.stringify(row.value):String(row.value)}</strong></div>)}</div>}</div>}
  </div>;
 }
