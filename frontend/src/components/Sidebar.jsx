@@ -18,7 +18,7 @@ export default function Sidebar({ isOpen, onClose }) {
         {["Markets","Positions","Orders","History"].map(item => <button key={item} className="menu-item" onClick={()=>alert("This module is being wired to the connected trading services.")}>{item}</button>)}
         <div className="menu-category">DERIV</div>
         <button className={active("/real-trading")} onClick={()=>go("/real-trading")}>Real Trading Terminal</button>
-        <button className="menu-item" onClick={()=>alert("Deriv connection is managed by the connected Supabase services.")}>Connection</button>
+        <button className={active("/deriv/connect")} onClick={()=>go("/deriv/connect")}>Connection</button>
         <button className="menu-item" onClick={()=>alert("Deriv account data is available through the connected account service.")}>Account</button>
         <div className="menu-category">ACCOUNTS</div>
         <button className={active("/profit-wallet")} onClick={()=>go("/profit-wallet")}>Profit Wallet</button>
