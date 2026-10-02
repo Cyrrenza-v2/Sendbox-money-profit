@@ -23,6 +23,8 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      - name: Verify PWA assets
+        run: test -f frontend/public/manifest.json && test -f frontend/public/sw.js
       - name: Build Production Bundle
         run: npm run build
         env:
