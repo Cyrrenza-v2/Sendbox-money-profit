@@ -1,28 +1,28 @@
 name: VELTRION Production CI/CD Pipeline
-
 on:
   push:
     branches: [main, production]
   pull_request:
     branches: [main, production]
-
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
       - name: Install Dependencies
-        run: npm ci
-      - name: Run Lint and Type Check
-        run: npm run lint --if-present
-      - name: Execute Test Suite
-        run: npm test --if-present
+        run: npm install
+      - name: Run Lint and Type Checks
+        run: npm run lint
+      - name: Execute Phase 12 Actual-Stack Test Suite
+        run: npm test
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       - name: Build Production Bundle
         run: npm run build
         env:
