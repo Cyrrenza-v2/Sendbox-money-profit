@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-const DERIV_PUBLIC_WS = "wss://api.derivws.com/trading/v1/options/ws/public";
+const DERIV_PUBLIC_WS = "wss://ws.binaryws.com/websockets/v3";
 
 export default function LiveMarketPanel({ compact = false, selectedSymbol = null, onSymbolChange }) {
   const [markets, setMarkets] = useState([]);
@@ -20,7 +20,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       if (closed) return;
       setConnected(true);
       setError("");
-      ws.send(JSON.stringify({ active_symbols: "full", req_id: 1 }));
+      ws.send(JSON.stringify({ active_symbols: "full", product_type: "basic", req_id: 1 }));
     };
 
     ws.onmessage = event => {
