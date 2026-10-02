@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "npm --prefix ../frontend run build -- --outDir ../backend/dist"
   },
   "dependencies": {
     "ws": "^8.18.0"
