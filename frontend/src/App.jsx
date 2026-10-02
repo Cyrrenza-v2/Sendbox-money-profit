@@ -6,6 +6,7 @@ import Security from "./pages/Security";
 import RealTradingTerminal from "./pages/RealTradingTerminal";
 import ProfitWalletView from "./pages/ProfitWalletView";
 import OperationsControlView from "./pages/OperationsControlView";
+import ConnectDeriv from "./pages/ConnectDeriv";
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/security" element={<Security />} />
         <Route path="/real-trading" element={<RealTradingTerminal />} />
+        <Route path="/deriv/connect" element={<ConnectDeriv />} />
         <Route path="/profit-wallet" element={<ProfitWalletView />} />
         <Route path="/operations" element={<OperationsControlView />} />
       </Route>
