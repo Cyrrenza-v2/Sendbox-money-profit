@@ -6,5 +6,6 @@
   "scripts": {
     "start": "node local-server.js",
     "build": "npm --prefix ../frontend run build -- --outDir ../backend/dist"
-  }
+  },
+  "main": "local-server.js"
 }
