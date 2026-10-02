@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Sidebar from "../components/Sidebar";
+import LiveMarketPanel from "../components/LiveMarketPanel";
 import { supabase } from "../supabaseClient";
 
 const API = import.meta.env.VITE_REAL_TRADING_API_URL || "";
@@ -116,6 +117,7 @@ export default function RealTradingTerminal() {
               {emergencyStopped ? "RESUME TRADING" : "EMERGENCY STOP"}
             </button>
           </div>
+          <LiveMarketPanel compact selectedSymbol={symbol} onSymbolChange={setSymbol} />
           <div className="real-grid">
             <label>Stake amount (USD)<input value={stake} onChange={e => setStake(e.target.value)} type="number" min="0.01" step="0.01" disabled={emergencyStopped}/></label>
             <label>Deriv symbol<input value={symbol} onChange={e => setSymbol(e.target.value)} disabled={emergencyStopped}/></label>
