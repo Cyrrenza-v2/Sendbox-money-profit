@@ -1,8 +1,16 @@
-import { supabase } from "../frontend/src/supabaseClient.js";
+import { getHealthSnapshot } from "./healthMonitor.js";
 
-export async function runReconciliation() {
-  const started = new Date().toISOString();
-  const { data, error } = await supabase.from("system_health").select("service_name,status,last_heartbeat").order("service_name");
-  if (error) throw error;
-  return { status: "COMPLETED", startedAt: started, completedAt: new Date().toISOString(), servicesChecked: (data || []).length, corrections: 0 };
+let lastRun = null;
+let runCount = 0;
+
+export async function runReconciliation(source = "manual") {
+  const startedAt = new Date().toISOString();
+  const health = await getHealthSnapshot();
+  runCount += 1;
+  lastRun = { source, startedAt, completedAt: new Date().toISOString(), status: "COMPLETED", servicesChecked: health.services.length, corrections: 0 };
+  return lastRun;
+}
+
+export function getReconciliationStatus() {
+  return { status: lastRun?.status || "READY", lastRun, runCount, schedule: "every 5 minutes" };
 }
