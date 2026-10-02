@@ -26,6 +26,14 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       if (disposed) return;
       const endpoint = DERIV_PUBLIC_ENDPOINTS[endpointIndex];
       let opened = false;
+      let failureHandled = false;
+      const failCurrentSocket = () => {
+        if (failureHandled || disposed) return;
+        failureHandled = true;
+        clearTimeout(timeout);
+        setConnected(false);
+        tryNextEndpoint();
+      };
       symbolsLoaded = false;
 
       try {
@@ -38,7 +46,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       const timeout = setTimeout(() => {
         if (!opened && !disposed) {
           try { socket?.close(); } catch {}
-          tryNextEndpoint();
+          failCurrentSocket();
         }
       }, 10000);
 
@@ -100,18 +108,13 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         }
       };
 
-      socket.onerror = () => {
-        clearTimeout(timeout);
-        if (disposed) return;
-        setConnected(false);
-        tryNextEndpoint();
-      };
+      socket.onerror = () => failCurrentSocket();
 
       socket.onclose = () => {
         clearTimeout(timeout);
         if (disposed) return;
         setConnected(false);
-        if (!symbolsLoaded) tryNextEndpoint();
+        if (!opened || !symbolsLoaded) failCurrentSocket();
         else {
           retryTimer = setTimeout(() => {
             endpointIndex = 0;
