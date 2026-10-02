@@ -1,51 +1,60 @@
 import { useEffect, useState } from "react";
-import { api } from "../lib/api";
+import Sidebar from "../components/Sidebar";
+import { supabase } from "../supabaseClient";
 
-const money = (v, currency = "USD") => v == null ? "—" : new Intl.NumberFormat("en-US", {
-  style: "currency", currency, minimumFractionDigits: 2
-}).format(Number(v));
+const money = (value) => value == null ? "$0.00" : Number(value).toLocaleString("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2});
 
 export default function Home() {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState("");
-  const load = async () => {
-    try { setError(""); setData(await api("/home-summary")); }
-    catch (e) { setError(e.message || "Unable to load live command data."); }
-  };
-  useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, []);
-  if (error) return <div className="page"><div className="panel error-panel"><h1>Command Center unavailable</h1><p>{error}</p><button className="primary" onClick={load}>RETRY</button></div></div>;
-  if (!data) return <div className="page"><div className="loading">Loading live command center…</div></div>;
-  const s = data.sandbox || {}, currency = s.currency || "USD";
-  return <div className="page">
-    <div className="page-head"><div><span className="eyebrow">OVERVIEW / COMMAND CENTER</span><h1>Home</h1><p>Authoritative operating state from VELTRION backend.</p></div><span className="live-stamp">LIVE DATA</span></div>
-    <div className="metric-grid">
-      <Metric label="SANDBOX CAPITAL" value={money(s.initialCapital, currency)} sub={s.accountStatus || "—"} />
-      <Metric label="AVAILABLE CAPITAL" value={money(s.availableCapital, currency)} sub="Database balance" />
-      <Metric label="EQUITY" value={money(s.equity, currency)} sub="Current equity" />
-      <Metric label="WITHDRAWABLE" value={money(s.withdrawable, currency)} sub="Sandbox accounting" />
+  const [sidebarOpen,setSidebarOpen]=useState(false);
+  const [sandbox,setSandbox]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+
+  async function loadSandbox(){
+    setLoading(true); setError("");
+    try{
+      const {data:{user}}=await supabase.auth.getUser();
+      if(!user) throw new Error("AUTH_REQUIRED");
+      const {data,error:queryError}=await supabase.from("sandbox_accounts")
+        .select("id,currency,initial_capital,available_capital,allocated_capital,withdrawable,status,updated_at")
+        .eq("user_id",user.id).maybeSingle();
+      if(queryError) throw queryError;
+      setSandbox(data||{currency:"USD",initial_capital:100000,available_capital:100000,allocated_capital:0,withdrawable:0,status:"active"});
+    }catch(err){setError(err?.message||"Unable to load sandbox account.");}
+    finally{setLoading(false);}
+  }
+
+  useEffect(()=>{loadSandbox();},[]);
+  const initial=Number(sandbox?.initial_capital??100000);
+  const available=Number(sandbox?.available_capital??initial);
+  const profit=available-initial;
+
+  return <div className="app-layout">
+    <Sidebar isOpen={sidebarOpen} onClose={()=>setSidebarOpen(false)}/>
+    <div className="app-main">
+      <header className="topbar"><button className="menu-button" onClick={()=>setSidebarOpen(true)}>☰</button><span className="topbar-brand">VELTRION</span><span className="admin-badge">● ADMIN</span></header>
+      <main className="content">
+        <section className="page-heading"><div><span className="eyebrow">PHASE 1 / COMMAND CENTER</span><h1>Home</h1><p>Private admin dashboard with sandbox-only capital.</p></div><span className="live-badge">● AUTHENTICATED</span></section>
+        {error&&<div className="error-panel"><b>Sandbox data unavailable</b><p>{error}</p><button className="button primary" onClick={loadSandbox}>RETRY</button></div>}
+        {loading?<div className="loading-panel">Loading VELTRION…</div>:<>
+          <div className="metric-grid">
+            <Metric label="SANDBOX PROFIT WALLET" value={money(profit)} sub="Virtual P/L only" positive={profit>=0}/>
+            <Metric label="VIRTUAL CAPITAL" value={money(available)} sub="Available sandbox balance"/>
+            <Metric label="STARTING CAPITAL" value={money(initial)} sub="Initial virtual capital"/>
+            <Metric label="STATUS" value={String(sandbox?.status||"ACTIVE").toUpperCase()} sub="Sandbox account"/>
+          </div>
+          <div className="panel"><div className="panel-title">CONNECTIONS</div>
+            <div className="connection-row"><div><strong>DERIV</strong><span>Real connection is not active in Phase 1.</span></div><b className="offline">○ NOT CONNECTED</b></div>
+            <div className="divider"/>
+            <div className="connection-row"><div><strong>MT5</strong><span>Virtual account connection is reserved for the next phase.</span></div><b className="offline">○ NOT CONNECTED</b></div>
+          </div>
+          <div className="panel"><div className="panel-title">TRADING OVERVIEW</div>
+            <div className="metric-list"><div><span>Today's P/L</span><strong>{money(0)}</strong></div><div><span>Open Positions</span><strong>0</strong></div><div><span>Available Capital</span><strong>{money(available)}</strong></div></div>
+            <button className="button primary full" onClick={()=>alert("Coming in the next system phase")}>OPEN TRADING</button>
+          </div>
+        </>}
+      </main>
     </div>
-    <div className="metric-grid compact">
-      <Metric label="OPEN POSITIONS" value={String(s.openPositionsCount ?? "—")} sub="Sandbox" />
-      <Metric label="FLOATING P/L" value={money(s.floatingPnl, currency)} sub="Live stored positions" />
-      <Metric label="DERIV" value={String(data.deriv?.status || "—").toUpperCase()} sub={data.deriv?.account || "Account not connected"} />
-      <Metric label="MT5" value={String(data.mt5?.status || "—").toUpperCase()} sub={data.mt5?.server || "Gateway not connected"} />
-    </div>
-    <div className="two-col">
-      <section className="panel"><div className="panel-title"><h2>Market Overview</h2><span>BACKEND SNAPSHOT</span></div>
-        {(data.market?.symbols || []).length ? <div className="market-list">{data.market.symbols.map(x => <div className="market-row" key={x.symbol}><b>{x.symbol}</b><span>{x.bid ?? "—"}</span><span>{x.ask ?? "—"}</span><em>{x.updatedAt ? new Date(x.updatedAt).toLocaleTimeString() : "—"}</em></div>)}</div> : <div className="empty">No market snapshot is available from the backend.</div>}
-      </section>
-      <section className="panel"><div className="panel-title"><h2>System Health</h2><span>{data.system?.status || "—"}</span></div>
-        <div className="health-card"><b>{data.system?.status || "UNKNOWN"}</b><p>{data.system?.message || "Backend health endpoint responded."}</p></div>
-        <div className="row-line"><span>Real trading</span><b>{data.realTrading?.enabled ? "ENABLED" : "LOCKED"}</b></div>
-        <div className="row-line"><span>Trading mode</span><b>{data.realTrading?.mode || "—"}</b></div>
-      </section>
-    </div>
-    <section className="panel"><div className="panel-title"><h2>Connections</h2><span>AUTHENTICATED STATE</span></div>
-      <div className="connection-grid">
-        <button className="connection-card" onClick={() => location.href="/Sendbox-money-profit/app/deriv/account"}><b>DERIV</b><span>{data.deriv?.status || "NOT CONNECTED"}</span><small>{data.deriv?.account || "Connect a real Deriv account"}</small></button>
-        <button className="connection-card" onClick={() => location.href="/Sendbox-money-profit/app/mt5/overview"}><b>MT5</b><span>{data.mt5?.status || "NOT CONNECTED"}</span><small>{data.mt5?.server || "Bridge not connected"}</small></button>
-      </div>
-    </section>
   </div>;
 }
-function Metric({label,value,sub}) { return <div className="metric"><small>{label}</small><strong>{value}</strong><span>{sub}</span></div>; }
+function Metric({label,value,sub,positive}){return <div className="metric-card"><small>{label}</small><strong className={positive===false?"negative":positive?"positive":""}>{value}</strong><span>{sub}</span></div>}
