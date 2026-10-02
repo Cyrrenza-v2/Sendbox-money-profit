@@ -85,7 +85,6 @@ const server = http.createServer(async (req,res) => {
         return fs.createReadStream(indexFile).pipe(res);
       }
     }
-  try {
     if (req.method==="GET" && req.url==="/health") return json(res,200,{ok:true,realTradingEnabled:REAL_TRADING_ENABLED,emergencyStopped:riskEngine.isEmergencyStopped()});
     if (req.method==="POST" && req.url==="/api/operations/emergency-stop") {
       if (!(await authenticate(req))) return json(res,401,{error:"AUTH_REQUIRED"});
