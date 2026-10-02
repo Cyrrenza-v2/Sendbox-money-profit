@@ -1,12 +1,12 @@
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-export async function requestWithdrawal(walletId, amount, destination, userId) {
-  if (!walletId || !Number.isFinite(Number(amount)) || Number(amount) <= 0 || !destination || !userId) throw new Error("INVALID_WITHDRAWAL_REQUEST");
+export async function requestWithdrawal(walletId, amount, destination) {
+  if (!walletId || !Number.isFinite(Number(amount)) || Number(amount) <= 0 || !destination) throw new Error("INVALID_WITHDRAWAL_REQUEST");
   const response = await fetch(SUPABASE_URL + "/rest/v1/rpc/request_profit_withdrawal", {
     method: "POST",
     headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: "Bearer " + SUPABASE_SERVICE_ROLE_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ p_wallet_id: walletId, p_amount: Number(amount), p_destination: destination, p_user_id: userId })
+    body: JSON.stringify({ p_wallet_id: walletId, p_amount: Number(amount), p_destination: destination })
   });
   if (!response.ok) throw new Error("WITHDRAWAL_REQUEST_FAILED");
   const data = await response.json();
