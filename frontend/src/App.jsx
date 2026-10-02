@@ -1,47 +1,18 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
-import AppShell from "./components/AppShell";
-import Login from "./pages/Login";
 import Home from "./pages/Home";
-import ConnectDeriv from "./pages/ConnectDeriv";
-import DerivCallback from "./pages/DerivCallback";
-import SectionPage from "./pages/SectionPage";
-import TradeTerminal from "./pages/TradeTerminal";
-import SandboxDashboard from "./pages/SandboxDashboard";
-import Mt5ConnectionView from "./pages/Mt5ConnectionView";
-import AIAssistants from "./pages/AIAssistants";
+import Login from "./pages/Login";
+import Security from "./pages/Security";
 
-const sections=[
- ["trading/markets","Markets","Live symbols and backend market state."],
- ["trading/positions","Positions","Open sandbox positions and floating P/L."],
- ["trading/orders","Orders","Working and historical order state."],
- ["trading/history","Trade History","Backend trade history and audit data."],
- ["real/account","Real Account","Real-account state; execution remains backend-controlled."],
- ["wallet/overview","Profit Wallet","Settled wallet state and available balances."],
- ["analytics/performance","Analytics","Performance and risk data from backend services."],
- ["operations/health","Operations","System and infrastructure health."],
- ["operations/alerts","Alert Center","Operational alert and health state."],
- ["security/overview","Security","Authenticated audit and security state."],
- ["settings","Settings","Backend configuration and system state."]
-];
-
-export default function App(){
- return <Routes>
-  <Route path="/login" element={<Login/>}/>
-  <Route path="/connect-deriv/callback" element={<DerivCallback/>}/>
-  <Route element={<ProtectedRoute><AppShell/></ProtectedRoute>}>
-   <Route path="/app/home" element={<Home/>}/>
-   <Route path="/app/ai-assistants" element={<AIAssistants/>}/>
-   <Route path="/app/deriv/account" element={<ConnectDeriv/>}/>
-   <Route path="/app/trading/terminal" element={<TradeTerminal/>}/>
-   <Route path="/app/sandbox/overview" element={<SandboxDashboard/>}/>
-   <Route path="/app/mt5/overview" element={<Mt5ConnectionView/>}/>
-   {sections.map(([path,title,purpose])=>(
-     <Route key={path} path={"/app/"+path} element={<SectionPage title={title} purpose={purpose}/>} />
-   ))}
-   <Route path="/app" element={<Navigate to="/app/home" replace/>}/>
-  </Route>
-  <Route path="/" element={<Navigate to="/app/home" replace/>}/>
-  <Route path="*" element={<Navigate to="/app/home" replace/>}/>
- </Routes>;
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route element={<ProtectedRoute />}>
+        <Route path="/" element={<Home />} />
+        <Route path="/security" element={<Security />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
 }
