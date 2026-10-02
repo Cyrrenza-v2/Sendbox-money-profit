@@ -3,7 +3,14 @@
   "installCommand": "npm install --prefix frontend --no-audit --no-fund --legacy-peer-deps",
   "buildCommand": "npm run build",
   "outputDirectory": "frontend/dist",
-  "rewrites": [
-    { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
+  "functions": {
+    "api/**/*.js": {
+      "runtime": "nodejs20.x"
+    }
+  },
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1.js" },
+    { "src": "/assets/(.*)", "dest": "/assets/$1" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
