@@ -6,13 +6,18 @@ const DERIV_ACCOUNT_ID = process.env.DERIV_ACCOUNT_ID;
 const DERIV_API_TOKEN = process.env.DERIV_API_TOKEN;
 const REAL_TRADING_ENABLED = process.env.REAL_TRADING_ENABLED === "true";
 
-function requireEnabled() {
-  if (!REAL_TRADING_ENABLED) throw new Error("REAL_TRADING_DISABLED");
+function requireCredentials() {
   if (!DERIV_ACCOUNT_ID || !DERIV_API_TOKEN) throw new Error("REAL_TRADING_CREDENTIALS_NOT_CONFIGURED");
 }
 
-async function getAuthenticatedWsUrl() {
-  requireEnabled();
+function requireEnabled() {
+  requireCredentials();
+  if (!REAL_TRADING_ENABLED) throw new Error("REAL_TRADING_DISABLED");
+}
+
+async function getAuthenticatedWsUrl({ execution = false } = {}) {
+  if (execution) requireEnabled(); else requireCredentials();
+
   const headers = { Authorization: `Bearer ${DERIV_API_TOKEN}` };
   if (DERIV_APP_ID) headers["Deriv-App-ID"] = DERIV_APP_ID;
 
@@ -114,7 +119,7 @@ export class RealExecutionEngine {
     if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) throw new Error("INVALID_STAKE");
     if (!symbol || !["BUY", "SELL"].includes(side)) throw new Error("INVALID_ORDER");
 
-    const wsUrl = await getAuthenticatedWsUrl();
+    const wsUrl = await getAuthenticatedWsUrl({ execution: true });
     const proposal = proposalId
       ? { id: proposalId, ask_price: price ?? amount }
       : await this.getProposal({ amount, symbol, side, duration, durationUnit, currency }).then(r => r.proposal);
@@ -139,7 +144,7 @@ export class RealExecutionEngine {
     requireEnabled();
     if (!proposalId) throw new Error("PROPOSAL_ID_REQUIRED");
     if (!Number.isFinite(Number(price)) || Number(price) <= 0) throw new Error("INVALID_MAX_PRICE");
-    const wsUrl = await getAuthenticatedWsUrl();
+    const wsUrl = await getAuthenticatedWsUrl({ execution: true });
     const buy = await wsRequest(wsUrl, {
       buy: String(proposalId),
       price: Number(price),
@@ -154,7 +159,7 @@ export class RealExecutionEngine {
     if (!contractTemplate || contractTemplate.contract_type !== "ACCU") throw new Error("ACCU_CONTRACT_REQUIRED");
     if (!strategyParameters || typeof strategyParameters !== "object") throw new Error("STRATEGY_PARAMETERS_REQUIRED");
 
-    const wsUrl = await getAuthenticatedWsUrl();
+    const wsUrl = await getAuthenticatedWsUrl({ execution: true });
     return wsRequest(wsUrl, {
       auto_start: 1,
       contract_template: contractTemplate,
