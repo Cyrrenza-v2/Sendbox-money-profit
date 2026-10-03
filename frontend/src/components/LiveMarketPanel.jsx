@@ -101,7 +101,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         setConnected(true);
         setError("");
         subscribedSymbols.clear();
-        socket.send(JSON.stringify({ active_symbols: "brief", req_id: 1 }));
+        socket.send(JSON.stringify({ active_symbols: "full", req_id: 1 }));
         subscribeSymbol(selectedSymbolRef.current);
       };
 
@@ -232,7 +232,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       <select value={marketFilter} onChange={event => setMarketFilter(event.target.value)}>
         {categories.map(category => <option key={category} value={category}>{category}</option>)}
       </select>
-      <span className="market-count">{loading ? "Discovering markets…" : `${visibleMarkets.length} / ${markets.length} active`}</span>
+      <span className="market-count">{loading ? "Discovering all Deriv markets…" : `${visibleMarkets.length} shown / ${markets.length} active`}</span>
     </div>
     {error && <div className="market-error" role="status">{error}</div>}
     <div className={compact ? "market-grid compact" : "market-grid"}>
@@ -248,6 +248,6 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
     </div>
     {!compact && focusedMarket && <div className="market-detail"><div className="market-detail-heading"><div><span className="market-detail-kicker">SELECTED MARKET</span><h3>{focusedMarket.name}</h3><p>{focusedMarket.symbol} · {focusedMarket.market}</p></div><div className="market-detail-quote"><small>Latest public quote</small><strong>{ticks[focusedMarket.symbol] && Number.isFinite(ticks[focusedMarket.symbol].quote) ? ticks[focusedMarket.symbol].quote.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "Waiting for quote…"}</strong><small>{ticks[focusedMarket.symbol] ? new Date(ticks[focusedMarket.symbol].epoch * 1000).toLocaleTimeString() : "Feed initializing"}</small></div></div><div className="market-detail-actions"><button className="market-open-terminal" onClick={() => onOpenTerminal?.(focusedMarket.symbol)}>Open Web Terminal <span>→</span></button><button className="market-mt5-placeholder" disabled title="MT5 integration is not available yet">MT5 Terminal · Coming later</button></div><p className="market-detail-note">Choose a market here, review its current public price, then open the terminal to view candles and place sandbox orders. Selecting a market does not place an order.</p></div>}\n    {!loading && discoveryComplete && visibleMarkets.length === 0 && <div className="market-empty">No active Deriv symbols match this filter.</div>}
     {!loading && !discoveryComplete && markets.length === 0 && <div className="market-empty">Market list is unavailable until the Deriv connection succeeds. The diagnostic above explains the latest failure.</div>}
-    <div className="market-footnote">Dynamically discovered from Deriv <code>active_symbols</code>. Public live market data only; trading credentials remain server-side.</div>
+    <div className="market-footnote">Dynamically discovered from Deriv <code>active_symbols=full</code>. The market list is the complete active-symbol response; tick streaming is subscribed on demand to avoid socket flooding. Public live market data only; trading credentials remain server-side.</div>
   </section>;
 }
