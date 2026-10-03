@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const DERIV_PUBLIC_ENDPOINTS = ["wss:" + "//api.derivws.com/trading/v1/options/ws/public", "wss:" + "//ws.binaryws.com/websockets/v3"];
 
-export default function LiveMarketPanel({ compact = false, selectedSymbol = null, onSymbolChange }) {
+export default function LiveMarketPanel({ compact = false, selectedSymbol = null, onSymbolChange, onPriceChange }) {
   const [markets, setMarkets] = useState([]);
   const [ticks, setTicks] = useState({});
   const [connected, setConnected] = useState(false);
@@ -133,14 +133,10 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             const tick = message.tick;
             const symbol = tick.underlying_symbol ?? tick.symbol;
             if (!symbol) return;
-            setTicks(prev => ({
-              ...prev,
-              [symbol]: {
-                quote: Number(tick.quote),
-                epoch: Number(tick.epoch),
-                pipSize: tick.pip_size
-              }
-            }));
+            const quote = Number(tick.quote);
+            const nextTick = { quote, epoch: Number(tick.epoch), pipSize: tick.pip_size };
+            setTicks(prev => ({ ...prev, [symbol]: nextTick }));
+            if (symbol === selectedSymbol) onPriceChange?.(nextTick);
           }
         } catch {
           setError("Deriv returned a response that could not be read.");
