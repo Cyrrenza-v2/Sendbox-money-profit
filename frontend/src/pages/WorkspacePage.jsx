@@ -27,10 +27,11 @@ export default function WorkspacePage({title,section}){
   if(section==="mt5"){const r=await supabase.from("mt5_connections").select("status,server,last_heartbeat_at,environment").eq("user_id",user.id).maybeSingle();data=r.data;error=r.error;}
   else if(section==="sandbox"){const r=await supabase.from("sandbox_accounts").select("id,currency,initial_capital,available_capital,allocated_capital,withdrawable,status,created_at").eq("user_id",user.id).maybeSingle();data=r.data;error=r.error;}
   else if(section==="settings"){const r=await supabase.from("app_settings").select("environment,trading_mode,real_trading_enabled,updated_at").order("updated_at",{ascending:false}).limit(1).maybeSingle();data=r.data;error=r.error;}
-  else if(section==="real"){const [account,settings]=await Promise.all([
-    supabase.from("real_trading_accounts").select("id,currency,is_active,emergency_stopped,balance,equity,created_at,updated_at").eq("user_id",user.id).maybeSingle(),
-    supabase.from("app_settings").select("environment,trading_mode,real_trading_enabled,updated_at").order("updated_at",{ascending:false}).limit(1).maybeSingle()
-  ]);if(account.error)throw account.error;if(settings.error)throw settings.error;data={account:account.data,configuration:settings.data};}
+  else if(section==="real"){const [account,settings,connection]=await Promise.all([
+    supabase.from("real_trading_accounts").select("id,deriv_account_id,currency,is_active,emergency_stopped,balance,equity,max_stake,daily_loss_limit,created_at,updated_at").eq("user_id",user.id).maybeSingle(),
+    supabase.from("app_settings").select("environment,trading_mode,real_trading_enabled,updated_at").order("updated_at",{ascending:false}).limit(1).maybeSingle(),
+    supabase.from("deriv_connections").select("status,deriv_loginid,currency,last_success_at,last_verified_at,last_error").eq("user_id",user.id).order("updated_at",{ascending:false}).limit(1).maybeSingle()
+  ]);if(account.error)throw account.error;if(settings.error)throw settings.error;if(connection.error)throw connection.error;data={account:account.data,configuration:settings.data,derivConnection:connection.data};}
   else if(section==="wallet"){const {data:account,error:accountError}=await supabase.from("real_trading_accounts").select("id,currency").eq("user_id",user.id).maybeSingle();if(accountError)throw accountError;if(!account){data=null;}else{const {data:wallet,error:walletError}=await supabase.from("real_profit_wallets").select("id,available_balance,reserved_balance,currency,updated_at").eq("account_id",account.id).maybeSingle();if(walletError)throw walletError;if(!wallet){data=null;}else{const {data:withdrawals,error:withdrawalsError}=await supabase.from("withdrawals").select("id,amount,status,destination_type,requested_at,completed_at").eq("wallet_id",wallet.id).order("requested_at",{ascending:false}).limit(20);if(withdrawalsError)throw withdrawalsError;data={wallet,withdrawals:withdrawals||[]};}}}
   else if(section==="security"){const [sessions,audit]=await Promise.all([
     supabase.from("user_sessions").select("id,status,last_seen_at,created_at").eq("user_id",user.id).order("created_at",{ascending:false}).limit(20),
@@ -49,6 +50,48 @@ export default function WorkspacePage({title,section}){
  }catch(e){if(alive)setState({loading:false,error:e?.message||"Unable to load backend data.",data:null});}}
  load();return()=>{alive=false};},[section]);
  if(section==="markets") return <div className="vel-page"><div className="vel-page-heading"><div><div className="vel-eyebrow">VELTRION / MARKET DATA</div><h1>{title}</h1><p>All currently active Deriv instruments with live public tick prices. This screen displays market data only and does not execute trades.</p></div><span className="vel-data-source">SOURCE · DERIV LIVE FEED</span></div><LiveMarketPanel /></div>;
+ if(section==="real"&&!state.loading&&!state.error){
+  const account=state.data?.account||null;
+  const configuration=state.data?.configuration||null;
+  const connection=state.data?.derivConnection||null;
+  const connected=String(connection?.status||"").toLowerCase()==="connected";
+  const tradingEnabled=configuration?.real_trading_enabled===true;
+  return <div className="vel-page">
+   <div className="vel-page-heading"><div><div className="vel-eyebrow">VELTRION / REAL ACCOUNT</div><h1>{title}</h1><p>Real Deriv connection status and VELTRION account provisioning are shown separately. No sandbox funds are represented as real funds.</p></div><span className="vel-data-source">SOURCE · DERIV CONNECTION + REAL ACCOUNT LEDGER</span></div>
+   <div className="vel-panel">
+    <div className="vel-panel-title">REAL ACCOUNT PROVISIONING <span>{account?"ACCOUNT RECORD FOUND":"NOT PROVISIONED"}</span></div>
+    {!account?<div className="vel-state"><div className="vel-state-mark">—</div><h3>No VELTRION real account has been provisioned</h3><p>Your Deriv authorization and a VELTRION real-account ledger record are separate things. A real account record is not present, so this screen cannot show a VELTRION real balance or equity.</p></div>:<div className="vel-data-grid">
+     <div className="vel-data-field"><span>Deriv account ID</span><strong>{account.deriv_account_id||"Unavailable"}</strong></div>
+     <div className="vel-data-field"><span>Currency</span><strong>{account.currency||"Unavailable"}</strong></div>
+     <div className="vel-data-field"><span>Recorded balance</span><strong>{account.balance==null?"Unavailable":(account.currency||"")+" "+Number(account.balance).toFixed(2)}</strong></div>
+     <div className="vel-data-field"><span>Recorded equity</span><strong>{account.equity==null?"Unavailable":(account.currency||"")+" "+Number(account.equity).toFixed(2)}</strong></div>
+     <div className="vel-data-field"><span>Account active</span><strong>{account.is_active?"Yes":"No"}</strong></div>
+     <div className="vel-data-field"><span>Emergency stop</span><strong>{account.emergency_stopped?"ON":"OFF"}</strong></div>
+    </div>}
+   </div>
+   <div className="vel-panel">
+    <div className="vel-panel-title">DERIV OAUTH CONNECTION <span>{connected?"CONNECTED":"NOT CONNECTED"}</span></div>
+    <div className="vel-data-grid">
+     <div className="vel-data-field"><span>Connection status</span><strong>{connection?.status||"Unavailable"}</strong></div>
+     <div className="vel-data-field"><span>Deriv login ID</span><strong>{connection?.deriv_loginid||"Unavailable"}</strong></div>
+     <div className="vel-data-field"><span>Deriv currency</span><strong>{connection?.currency||"Not provided by connection metadata"}</strong></div>
+     <div className="vel-data-field"><span>Last verified</span><strong>{connection?.last_verified_at?new Date(connection.last_verified_at).toLocaleString():"Unavailable"}</strong></div>
+    </div>
+    {connection?.last_error&&<p className="vel-error">{connection.last_error}</p>}
+    <p>OAuth connection confirms authorization metadata only; it does not itself create a VELTRION real-account ledger record or provide a live balance.</p>
+   </div>
+   <div className="vel-panel">
+    <div className="vel-panel-title">TRADING SAFETY CONFIGURATION <span>{tradingEnabled?"ENABLED IN SETTINGS":"REAL TRADING DISABLED"}</span></div>
+    <div className="vel-data-grid">
+     <div className="vel-data-field"><span>Environment</span><strong>{configuration?.environment||"Unavailable"}</strong></div>
+     <div className="vel-data-field"><span>Trading mode</span><strong>{configuration?.trading_mode||"Unavailable"}</strong></div>
+     <div className="vel-data-field"><span>Real trading setting</span><strong>{tradingEnabled?"Enabled":"Disabled"}</strong></div>
+     <div className="vel-data-field"><span>Configuration updated</span><strong>{configuration?.updated_at?new Date(configuration.updated_at).toLocaleString():"Unavailable"}</strong></div>
+    </div>
+    <p>Real-money execution remains frozen. This screen does not enable trading or create an account automatically.</p>
+   </div>
+  </div>;
+ }
  const rows=Array.isArray(state.data)?state.data:state.data&&typeof state.data==="object"?Object.entries(state.data).map(([field,value])=>({field,value})):[];
  return <div className="vel-page"><div className="vel-page-heading"><div><div className="vel-eyebrow">VELTRION / OPERATIONS PLATFORM</div><h1>{title}</h1><p>{config.intro}</p></div><span className="vel-data-source">SOURCE · {config.source}</span></div>
  {state.loading?<div className="vel-panel vel-state">Loading authorized backend data…</div>:state.error?<div className="vel-panel vel-error"><b>Data unavailable</b><p>{state.error}</p><small>No sample values are being shown.</small></div>:!state.data||(Array.isArray(state.data)&&state.data.length===0)?<div className="vel-panel vel-state"><div className="vel-state-mark">—</div><h3>No records returned</h3><p>The connected backend did not return data for this view. This is not a fabricated zero balance.</p></div>:<div className="vel-panel"><div className="vel-panel-title">BACKEND RESPONSE <span>{rows.length} FIELD{rows.length===1?"":"S"}</span></div>
