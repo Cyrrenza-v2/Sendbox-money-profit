@@ -140,7 +140,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
 
       socket.onerror = () => {
         if (disposed) return;
-        scheduleNextEndpoint("Unable to establish a WebSocket connection to Deriv. Check whether your network blocks WebSockets and confirm VITE_DERIV_APP_ID is a valid Deriv application ID.");
+        scheduleNextEndpoint("Unable to establish a WebSocket connection to Deriv. Check whether your network blocks WebSockets.");
       };
 
       socket.onclose = () => {
