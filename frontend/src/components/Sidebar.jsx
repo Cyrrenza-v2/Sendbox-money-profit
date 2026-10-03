@@ -15,7 +15,7 @@ export default function Sidebar({ isOpen, onClose }) {
       <nav className="sidebar-menu">
         <button className={active("/")} onClick={()=>go("/")}>HOME</button>
         <div className="menu-category">TRADING</div>
-        {["Markets","Positions","Orders","History"].map(item => <button key={item} className="menu-item" onClick={()=>alert("This module is being wired to the connected trading services.")}>{item}</button>)}
+        {[["Markets","/app/trading/markets"],["Positions","/app/trading/positions"],["Orders","/app/trading/orders"],["History","/app/trading/history"]].map(([item,path]) => <button key={item} className={active(path)} onClick={()=>go(path)}>{item}</button>)}
         <div className="menu-category">DERIV</div>
         <button className={active("/real-trading")} onClick={()=>go("/real-trading")}>Real Trading Terminal</button>
         <button className={active("/deriv/connect")} onClick={()=>go("/deriv/connect")}>Connection</button>
