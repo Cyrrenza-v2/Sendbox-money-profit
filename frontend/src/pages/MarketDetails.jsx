@@ -23,7 +23,7 @@ export default function MarketDetails(){
    <section className="vel-panel market-choice-card">
     <div className="market-choice-top"><span className="market-choice-icon">WEB</span><span className="market-choice-status">AVAILABLE</span></div>
     <h2>Web Terminal</h2>
-    <p>Open the verified market chart, live quote, AI review and sandbox Buy/Sell workflow for this symbol.</p>
+    <p>Open the verified market chart, live quote, AI review and Sendbox real-account trading workflow for this symbol.</p>
     <button className="vel-button" onClick={()=>navigate(`/app/trading/terminal?symbol=${encodeURIComponent(symbol)}`)}>Open Web Terminal <span>→</span></button>
    </section>
    <section className="vel-panel market-choice-card">
@@ -35,7 +35,7 @@ export default function MarketDetails(){
   </div>
   <section className="vel-panel market-details-note">
    <div className="vel-panel-title">TRADING FLOW <span>MARKET FIRST</span></div>
-   <div className="market-flow-steps"><span>1 · Select market</span><span>2 · Review details</span><span>3 · Choose terminal</span><span>4 · Trade in sandbox</span></div>
+   <div className="market-flow-steps"><span>1 · Select market</span><span>2 · Review details</span><span>3 · Choose terminal</span><span>4 · Trade through Sendbox real account</span></div>
   </section>
   <button className="vel-back-link" onClick={()=>navigate("/app/trading/markets")}>← Back to Markets</button>
  </div>;
