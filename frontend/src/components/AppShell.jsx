@@ -4,7 +4,7 @@ import { supabase, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "../supabaseCli
 
 const secondaryGroups=[
  {label:"TRADING",items:[["AI Market Assistant","/app/trading/ai","✦"],["Orders","/app/trading/orders","≋"],["Trade History","/app/trading/history","◷"],["Deriv Connection","/app/deriv/account","⚡"],["MT5 Infrastructure","/app/mt5/overview","▦"]]},
- {label:"ACCOUNT",items:[["Sandbox","/app/sandbox/overview","◇"],["Real Account","/app/real/account","▣"],["Analytics","/app/analytics/performance","▥"],["Operations & Health","/app/operations/health","⚙"],["Security","/app/security/overview","⬡"],["Settings","/app/settings","☷"]]}
+ {label:"ACCOUNT",items:[["Real Account","/app/real/account","▣"],["Analytics","/app/analytics/performance","▥"],["Operations & Health","/app/operations/health","⚙"],["Security","/app/security/overview","⬡"],["Settings","/app/settings","☷"]]}
 ];
 const primary=[["Home","/app/home","⌂"],["Markets","/app/trading/markets","↗"],["Wallet","/app/wallet/overview","$"],["Portfolio","/app/trading/positions","◈"]];
 
@@ -16,7 +16,7 @@ async function fetchSystemHealth(){
 }
 
 export default function AppShell(){
- const [drawerOpen,setDrawerOpen]=useState(false),[health,setHealth]=useState("CHECKING"),[mode,setMode]=useState("SANDBOX"),[userEmail,setUserEmail]=useState(""),[theme,setTheme]=useState(()=>localStorage.getItem("veltrion-theme")||"system");
+ const [drawerOpen,setDrawerOpen]=useState(false),[health,setHealth]=useState("CHECKING"),[mode]=useState("REAL"),[userEmail,setUserEmail]=useState(""),[theme,setTheme]=useState(()=>localStorage.getItem("veltrion-theme")||"system");
  const location=useLocation(),navigate=useNavigate(),isHome=location.pathname==="/app/home";
  const pageName=useMemo(()=>{
   const all=[...primary,...secondaryGroups.flatMap(g=>g.items)];
@@ -50,7 +50,7 @@ export default function AppShell(){
     <div className="vel-topbar-right">
      <div className={"vel-health health-"+health.toLowerCase()}><span/> SYSTEM {health}</div>
      <button className="vel-theme-switch" onClick={()=>setTheme(t=>t==="dark"?"light":t==="light"?"system":"dark")} title="Cycle light, system and dark appearance">{theme==="dark"?"☾":theme==="light"?"☀":"◐"}</button>
-     <button className="vel-mode-switch" onClick={()=>setMode(current=>current==="SANDBOX"?"REAL":"SANDBOX")} title="Display mode only; this does not enable trading">{mode} MODE <span>⌄</span></button>
+     <span className="vel-mode-switch" title="VELTRION is configured for the real Sendbox account only">{mode} ACCOUNT <span>•</span></span>
      <div className="vel-user"><span className="vel-avatar">A</span><div><b>ACCOUNT</b><small>{userEmail||"Authenticated"}</small></div></div>
     </div>
    </header>
