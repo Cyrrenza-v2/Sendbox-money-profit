@@ -16,6 +16,13 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
   const socketRef = useRef(null);
 
   useEffect(() => {
+    selectedSymbolRef.current = selectedSymbol;
+    if (socketRef.current?.readyState === WebSocket.OPEN && selectedSymbol) {
+      socketRef.current.send(JSON.stringify({ ticks: selectedSymbol, subscribe: 1, req_id: 9000 }));
+    }
+  }, [selectedSymbol]);
+
+  useEffect(() => {
     let disposed = false;
     let socket = null;
     let endpointIndex = 0;
@@ -57,6 +64,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
 
       try {
         socket = new WebSocket(endpoint);
+        socketRef.current = socket;
       } catch {
         scheduleNextEndpoint("Your browser could not create a Deriv WebSocket connection.");
         return;
@@ -124,7 +132,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             // Queue a modest number of tick subscriptions to avoid flooding the public socket.
             tickTimers.forEach(clearTimeout);
             tickTimers = [];
-            if (selectedSymbolRef.current && !unique.some(item => item.symbol === selectedSymbolRef.current)) {
+            if (selectedSymbolRef.current) {
               socket.send(JSON.stringify({ ticks: selectedSymbolRef.current, subscribe: 1, req_id: 9000 }));
             }
             unique.slice(0, 80).forEach((item, index) => {
@@ -178,6 +186,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       if (retryTimer) clearTimeout(retryTimer);
       tickTimers.forEach(clearTimeout);
       try { socket?.close(); } catch {}
+      if (socketRef.current === socket) socketRef.current = null;
     };
   }, []);
 
