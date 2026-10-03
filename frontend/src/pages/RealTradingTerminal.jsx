@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import LiveMarketPanel from "../components/LiveMarketPanel";
 import { supabase } from "../supabaseClient";
@@ -16,7 +16,7 @@ export default function RealTradingTerminal() {
   const [message, setMessage] = useState("");
   const [connection, setConnection] = useState(null);
   const [sandboxAccount, setSandboxAccount] = useState(null);
-  const [marketPrice, setMarketPrice] = useState(null);
+  const [marketPrice, setMarketPrice] = useState(null);\n  const markInFlightRef = useRef(false);\n  const lastMarkAtRef = useRef(0);
 
   async function loadState() {
     try {
@@ -62,7 +62,7 @@ export default function RealTradingTerminal() {
     setMessage(active ? "Global emergency stop active. New trading requests are blocked." : "Global emergency stop released. Per-mode locks remain enforced.");
   }
 
-  function requestOrder(side) {
+  async function handleMarketTick(tick) {\n    const price = Number(tick?.quote);\n    setMarketPrice(Number.isFinite(price) ? price : null);\n    if (!sandboxAccount?.id || !symbol || !Number.isFinite(price) || price <= 0) return;\n    const now = Date.now();\n    if (markInFlightRef.current || now - lastMarkAtRef.current < 1000) return;\n    lastMarkAtRef.current = now;\n    markInFlightRef.current = true;\n    try {\n      await sandboxEngine.mark({ symbol, price });\n    } catch {\n      // Position marking is best-effort; the next live tick retries automatically.\n    } finally {\n      markInFlightRef.current = false;\n    }\n  }\n\n  function requestOrder(side) {
     if (!armed || emergencyStopped) return;
     setPendingSide(side);
     setConfirmOpen(true);
@@ -119,7 +119,7 @@ export default function RealTradingTerminal() {
               {emergencyStopped ? "RELEASE GLOBAL STOP" : "EMERGENCY STOP"}
             </button>
           </div>
-          <LiveMarketPanel compact selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={tick => setMarketPrice(tick?.quote ?? null)} />\n          <div className="panel"><b>Execution path:</b> Real Deriv market price → VELTRION sandbox funds → sandbox order → sandbox position/P&amp;L. <b>No real Deriv order is sent.</b></div>
+          <LiveMarketPanel compact selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={handleMarketTick} />\n          <div className="panel"><b>Execution path:</b> Real Deriv market price → VELTRION sandbox funds → sandbox order → sandbox position/P&amp;L. <b>No real Deriv order is sent.</b></div>
           <div className="real-grid">
             <label>Stake amount (USD)<input value={stake} onChange={e => setStake(e.target.value)} type="number" min="0.01" step="0.01" disabled={emergencyStopped}/></label>
             <label>Deriv symbol<input value={symbol} onChange={e => setSymbol(e.target.value)} disabled={emergencyStopped}/></label>
