@@ -19,6 +19,7 @@ export default function RealTradingTerminal() {
   const [marketPrice, setMarketPrice] = useState(null);
   const markInFlightRef = useRef(false);
   const lastMarkAtRef = useRef(0);
+  const contractLabel = side => String(side || "").toUpperCase() === "SELL" ? "PUT" : "CALL";
 
   async function loadState() {
     try {
@@ -102,9 +103,10 @@ export default function RealTradingTerminal() {
   }
 
   async function submitOrder() {
-    const side = pendingSide;
+    const side = String(pendingSide || "").toUpperCase();
+    const expectedContract = contractLabel(side);
     setConfirmOpen(false);
-    if (!side || !armed || emergencyStopped) return;
+    if (!["BUY", "SELL"].includes(side) || !armed || emergencyStopped) return;
     setMessage("Executing with VELTRION sandbox funds at the current Deriv market price…");
     try {
       if (!sandboxAccount?.id) throw new Error("SANDBOX_ACCOUNT_NOT_AVAILABLE");
@@ -118,8 +120,10 @@ export default function RealTradingTerminal() {
         idempotency_key: crypto.randomUUID(),
       });
       const order = result?.order || result?.data?.order || result?.data || result;
+      const persistedSide = String(order?.side || side).toUpperCase();
+      if (persistedSide !== side) throw new Error(`SANDBOX_DIRECTION_MISMATCH: requested ${side}, persisted ${persistedSide}`);
       await loadState();
-      setMessage(`Sandbox order executed using VELTRION internal funds. ${side === "BUY" ? "CALL" : "PUT"} ${symbol} at ${Number(marketPrice).toLocaleString("en-US", { maximumFractionDigits: 8 })}. No real Deriv money was used.${order?.id ? ` Order ID: ${order.id}` : ""}`);
+      setMessage(`Sandbox order executed using VELTRION internal funds. ${expectedContract} (${side}) ${symbol} at ${Number(marketPrice).toLocaleString("en-US", { maximumFractionDigits: 8 })}. No real Deriv money was used.${order?.id ? ` Order ID: ${order.id}` : ""}`);
     } catch (error) {
       setMessage(error?.message || "SANDBOX_ORDER_REJECTED");
     }
@@ -171,7 +175,7 @@ export default function RealTradingTerminal() {
     {confirmOpen && <div className="confirm-backdrop"><div className="confirm-modal">
       <h2>Confirm trading request</h2>
       <p>This order will use VELTRION internal sandbox funds and the current live Deriv market price. It will not place a real-money Deriv contract.</p>
-      <div className="confirm-data"><b>{pendingSide === "BUY" ? "CALL" : "PUT"}</b><span>{symbol}</span><span>${Number(stake || 0).toFixed(2)} USD stake</span></div>
+      <div className="confirm-data"><b>{contractLabel(pendingSide)} ({String(pendingSide || "").toUpperCase()})</b><span>{symbol}</span><span>${Number(stake || 0).toFixed(2)} USD stake</span></div>
       <div className="confirm-actions"><button className="button" onClick={() => setConfirmOpen(false)}>CANCEL</button><button className="button danger" onClick={submitOrder}>CONFIRM REQUEST</button></div>
     </div></div>}
   </div>;
