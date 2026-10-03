@@ -260,3 +260,38 @@ html,body,#root{background:Canvas!important;color:CanvasText!important}
  .vel-content{padding-top:14px}
  .market-flow-steps{grid-template-columns:1fr}
 }
+
+/* VELTRION Premium Indigo-Cyan-Finance Palette */
+:root{
+  --vel-indigo:#6d5dfc;
+  --vel-violet:#8b5cf6;
+  --vel-cyan:#22d3ee;
+  --vel-emerald:#22c55e;
+  --vel-coral:#f43f5e;
+  --vel-indigo-soft:color-mix(in srgb,#6d5dfc 14%,Canvas);
+  --vel-cyan-soft:color-mix(in srgb,#22d3ee 12%,Canvas);
+}
+.vel-app{--vel-accent:var(--vel-indigo);--vel-accent-2:var(--vel-cyan)}
+.vel-brand,.vel-brand-sub,.vel-nav-icon,.vel-eyebrow,.home-card-kicker,.market-kicker{color:var(--vel-indigo)!important}
+.vel-nav-item.active{box-shadow:inset 3px 0 var(--vel-indigo)!important}
+.vel-nav-item:hover,.vel-nav-item.active{background:color-mix(in srgb,var(--vel-indigo) 9%,Canvas)!important}
+.vel-primary-nav button:hover,.vel-primary-nav button.active{background:color-mix(in srgb,var(--vel-indigo) 9%,Canvas)!important}
+.vel-theme-switch:hover,.vel-back-home:hover{border-color:color-mix(in srgb,var(--vel-indigo) 55%,var(--vel-border))}
+.vel-panel,.vel-metric-card,.vel-home-primary-card,.home-terminal-grid button,.market-choice-card{transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease,background .18s ease}
+.vel-panel:hover,.vel-metric-card:hover{border-color:color-mix(in srgb,var(--vel-indigo) 28%,var(--vel-border))!important}
+.vel-home-primary-card:hover,.home-terminal-grid button:hover:not(:disabled),.market-choice-card:hover{border-color:color-mix(in srgb,var(--vel-indigo) 42%,var(--vel-border));box-shadow:0 12px 34px color-mix(in srgb,var(--vel-indigo) 10%,transparent);transform:translateY(-1px)}
+.vel-button.primary,.button.primary{background:linear-gradient(135deg,var(--vel-indigo),var(--vel-violet));color:#fff;border-color:transparent;box-shadow:0 8px 22px color-mix(in srgb,var(--vel-indigo) 20%,transparent)}
+.vel-button.primary:hover,.button.primary:hover{filter:brightness(1.08)}
+.market-open-terminal,.vt-ai-button{background:linear-gradient(135deg,var(--vel-indigo),var(--vel-violet))!important}
+.market-card:hover,.market-card.selected{border-color:var(--vel-cyan)!important;background:color-mix(in srgb,var(--vel-cyan) 7%,Canvas)!important}
+.vt-timeframes button.active,.vt-activity-tabs button.active{border-color:var(--vel-cyan);background:color-mix(in srgb,var(--vel-cyan) 10%,Canvas);color:var(--vel-cyan)}
+.vt-metric:nth-child(2):before{background:var(--vel-cyan)}
+.vt-metric:nth-child(3):before{background:var(--vel-violet)}
+.vt-metric:nth-child(4):before{background:var(--vel-emerald)}
+.vt-buy{background:linear-gradient(135deg,#16a34a,var(--vel-emerald))!important}
+.vt-sell{background:linear-gradient(135deg,#e11d48,var(--vel-coral))!important}
+.positive,.active-text,.vel-status-row b.is-good,.vel-success,.vt-success{color:var(--vel-emerald)!important}
+.negative,.danger,.real-eyebrow,.real-warning,.stop-notice{color:var(--vel-coral)}
+.live-badge{border-color:color-mix(in srgb,var(--vel-cyan) 45%,var(--vel-border));background:color-mix(in srgb,var(--vel-cyan) 9%,Canvas);color:var(--vel-cyan)}
+.vel-data-source{border-color:color-mix(in srgb,var(--vel-cyan) 28%,var(--vel-border))}
+:focus-visible{outline-color:var(--vel-cyan)}
