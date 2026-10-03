@@ -3,7 +3,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { supabase, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "../supabaseClient";
 
 const navGroups = [
-  { label: "COMMAND", items: [["Home","/app/home","⌂"],["Markets","/app/trading/markets","↗"],["Positions","/app/trading/positions","◈"],["Orders","/app/trading/orders","≋"],["Trade History","/app/trading/history","◷"]] },
+  { label: "COMMAND", items: [["Home","/app/home","⌂"],["Trading Terminal","/app/trading/terminal","▥"],["Markets","/app/trading/markets","↗"],["Positions","/app/trading/positions","◈"],["Orders","/app/trading/orders","≋"],["Trade History","/app/trading/history","◷"],["AI Market Assistant","/app/trading/ai","✦"]] },
   { label: "ACCOUNTS & INFRASTRUCTURE", items: [["Deriv Connection","/app/deriv/account","⚡"],["MT5 Infrastructure","/app/mt5/overview","▦"],["Sandbox","/app/sandbox/overview","◇"],["Real Account","/app/real/account","▣"],["Profit Wallet","/app/wallet/overview","$"]] },
   { label: "CONTROL", items: [["Analytics","/app/analytics/performance","▥"],["Operations","/app/operations/health","⚙"],["Security","/app/security/overview","⬡"],["Settings","/app/settings","☷"]] },
 ];
