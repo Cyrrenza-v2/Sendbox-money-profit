@@ -46,22 +46,18 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
     const subscribeSymbol = symbol => {
       if (!symbol || disposed || socket?.readyState !== WebSocket.OPEN) return;
       if (activeSubscription === symbol) return;
-      const previous = activeSubscription;
+      if (activeSubscription === symbol) return;
       activeSubscription = symbol;
 
-      // Stop the previous stream before starting the selected market stream.
-      if (previous) {
-        try {
-          socket.send(JSON.stringify({ forget: previous, req_id: nextReqId() }));
-        } catch {}
-      }
+      // Clear the socket's existing tick subscription before starting the new
+      // selected-market stream. Deriv forget expects a subscription id, not a
+      // symbol; forget_all avoids the recurring "already subscribed" state.
+      try {
+        socket.send(JSON.stringify({ forget_all: "ticks", req_id: nextReqId() }));
+      } catch {}
 
       try {
-        socket.send(JSON.stringify({
-          ticks: symbol,
-          subscribe: 1,
-          req_id: nextReqId()
-        }));
+        socket.send(JSON.stringify({ ticks: symbol, subscribe: 1, req_id: nextReqId() }));
       } catch {
         activeSubscription = null;
         setError("Unable to subscribe to the selected Deriv market price stream.");
