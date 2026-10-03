@@ -114,6 +114,9 @@ export default function ConnectDeriv() {
 
       setSessionStatus("VERIFIED");
       await load();
+      // Once the authenticated real WebSocket is verified, immediately reconcile
+      // the live balance so the UI cannot remain stuck waiting for a separate sync click.
+      await syncLiveBalance();
     } catch (e) {
       setSessionStatus("FAILED");
       setError(e?.message || "Unable to verify the authenticated Deriv real session.");
