@@ -80,12 +80,21 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
 
           if (message.error) {
             const messageText = message.error.message || message.error.code || "Deriv returned a market-data error.";
+            const normalizedError = String(messageText).toLowerCase();
+            const isClosedMarket =
+              normalizedError.includes("market is presently closed") ||
+              normalizedError.includes("market will open") ||
+              normalizedError.includes("market_is_closed") ||
+              normalizedError.includes("market closed");
+
             if (message.req_id === 1) {
               setLoading(false);
               setDiscoveryComplete(false);
               setError(`Deriv market discovery failed: ${messageText}`);
               clearConnectionTimeout();
-            } else if (message.msg_type === "tick") {
+            } else if (message.msg_type === "tick" && !isClosedMarket) {
+              // A closed market is expected for some discovered symbols. Do not
+              // turn that normal condition into a global connection failure.
               setError(`A live price subscription failed: ${messageText}`);
             }
             return;
