@@ -213,6 +213,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       return matchesCategory && matchesQuery;
     });
   }, [markets, marketFilter, query]);
+  const focusedMarket = markets.find(item => item.symbol === focusedSymbol);
 
   return <section className="panel market-panel">
     <div className="panel-title market-title">
