@@ -24,7 +24,7 @@ export default function Home(){
  const [state,setState]=useState({loading:true,error:"",data:null});
  const load=useCallback(async()=>{setState({loading:true,error:"",data:null});try{const data=await fetchHomeSummary();setState({loading:false,error:"",data});}catch(e){setState({loading:false,error:e?.message||"Unable to retrieve Home Summary.",data:null});}},[]);
  useEffect(()=>{load();},[load]);
- const data=state.data,sandbox=data?.sandbox||{},currency=sandbox.currency||"USD";
+ const data=state.data,real=data?.real||{},wallet=data?.wallet||{},currency=real.currency||wallet.currency||"USD";
  return <div className="vel-page vel-home-page">
   <div className="vel-page-heading">
    <div><div className="vel-eyebrow">VELTRION / HOME</div><h1>Welcome back</h1><p>A simple overview of your account, markets and trading access.</p></div>
@@ -32,10 +32,10 @@ export default function Home(){
   </div>
   {state.loading?<div className="vel-panel vel-state">Loading authenticated Home Summary…</div>:state.error?<div className="vel-panel vel-error"><b>Home summary unavailable</b><p>{state.error}</p><button className="vel-button" onClick={load}>Retry connection</button></div>:<>
    <div className="vel-metric-grid">
-    <Metric label="SANDBOX BALANCE" value={money(sandbox.availableCapital,currency)} detail="Virtual account only"/>
-    <Metric label="PORTFOLIO VALUE" value={money(sandbox.equity,currency)} detail="Current sandbox equity"/>
-    <Metric label="FLOATING P/L" value={money(sandbox.floatingPnl,currency)} detail="Open sandbox positions"/>
-    <Metric label="OPEN POSITIONS" value={sandbox.openPositionsCount==null?"Unavailable":String(sandbox.openPositionsCount)} detail="Authenticated account"/>
+    <Metric label="REAL ACCOUNT BALANCE" value={money(real.balance,currency)} detail="Sendbox real trading account"/>
+    <Metric label="REAL ACCOUNT EQUITY" value={money(real.equity,currency)} detail="Sendbox real account equity"/>
+    <Metric label="PROFIT WALLET" value={money(wallet.withdrawable,currency)} detail="Realized profit available for withdrawal"/>
+    <Metric label="ACCOUNT STATUS" value={display(real.status)} detail="Real Sendbox account"/>
    </div>
    <section className="vel-home-primary">
     <button className="vel-home-primary-card" onClick={()=>navigate("/app/trading/markets")}><span className="home-card-kicker">TRADE</span><strong>Markets</strong><small>Select a market first, then choose your terminal.</small><b>Open Markets →</b></button>
@@ -51,7 +51,7 @@ export default function Home(){
    </section>
    <div className="vel-home-columns">
     <section className="vel-panel"><div className="vel-panel-title">ACCOUNT & CONNECTIONS <span>STATUS</span></div>
-     <StatusRow label="Sandbox account" value={display(sandbox.accountStatus)}/>
+     <StatusRow label="Sendbox real account" value={display(real.status)}/>
      <StatusRow label="Deriv connection" value={display(data?.deriv?.status)}/>
      <StatusRow label="MT5 infrastructure" value={display(data?.mt5?.status)}/>
      <StatusRow label="Environment" value={display(data?.system?.environment)}/>
@@ -60,7 +60,7 @@ export default function Home(){
      {data?.market?.symbols?.length?data.market.symbols.slice(0,5).map((item,index)=><div className="vel-market-row" key={item.symbol||index}><div><b>{display(item.symbol)}</b><small>Supabase market data</small></div><strong>{item.bid==null?"Unavailable":String(item.bid)}</strong><span>ASK {item.ask==null?"—":String(item.ask)}</span></div>):<div className="vel-empty-inline">No market symbols returned by the backend.</div>}
     </section>
    </div>
-   <div className="vel-footnote">Updated {data?.timestamp?new Date(data.timestamp).toLocaleString():"time unavailable"} · Home remains an overview; AI assistance belongs inside the market/trading flow.</div>
+   <div className="vel-footnote">Updated {data?.timestamp?new Date(data.timestamp).toLocaleString():"time unavailable"} · Real Sendbox account only. No demo/sandbox account is presented in the application.</div>
   </>}
  </div>;
 }
