@@ -133,6 +133,122 @@ function validateAccuTemplate(t: any) {
   };
 }
 
+async function reconcileRealState(userId: string, balancePayload: any, profitPayload: any) {
+  const { account } = await realContext(userId);
+  const balance = Number(balancePayload?.balance ?? balancePayload?.accounts?.[0]?.balance);
+  const closed = Array.isArray(profitPayload?.transactions) ? profitPayload.transactions
+    : Array.isArray(profitPayload?.profit_table) ? profitPayload.profit_table : [];
+
+  const accountUpdate: Record<string, unknown> = {
+    balance: Number.isFinite(balance) ? Math.max(0, balance) : Number(account.balance || 0),
+    equity: Number.isFinite(balance) ? Math.max(0, balance) : Number(account.equity || 0),
+    updated_at: new Date().toISOString()
+  };
+  await db.from("real_trading_accounts").update(accountUpdate).eq("id", account.id).eq("user_id", userId);
+
+  const wallet = await db.from("real_profit_wallets")
+    .select("id,available_balance,reserved_balance,currency")
+    .eq("account_id", account.id).maybeSingle();
+
+  if (!wallet.data) {
+    const created = await db.from("real_profit_wallets").insert({
+      account_id: account.id,
+      available_balance: 0,
+      reserved_balance: 0,
+      currency: account.currency || "USD"
+    }).select("id,available_balance,reserved_balance,currency").single();
+    if (created.error) throw created.error;
+  }
+
+  const { data: currentWallet, error: walletError } = await db.from("real_profit_wallets")
+    .select("id,available_balance,reserved_balance,currency")
+    .eq("account_id", account.id).single();
+  if (walletError || !currentWallet) throw walletError || new Error("REAL_PROFIT_WALLET_UNAVAILABLE");
+
+  let credited = 0;
+  let reconciled = 0;
+  for (const tx of closed) {
+    const contractId = String(tx.contract_id ?? tx.contractId ?? "").trim();
+    const profit = Number(tx.profit ?? tx.realized_pnl ?? tx.sell_price - tx.buy_price);
+    if (!contractId || !Number.isFinite(profit)) continue;
+
+    const existing = await db.from("real_orders")
+      .select("id,status,realized_pnl")
+      .eq("account_id", account.id)
+      .eq("deriv_contract_id", contractId)
+      .maybeSingle();
+
+    if (existing.error) throw existing.error;
+
+    if (existing.data) {
+      if (existing.data.status !== "CLOSED") {
+        await db.from("real_orders").update({
+          status: "CLOSED",
+          exit_price: Number(tx.sell_price ?? tx.sell_price),
+          realized_pnl: Number(profit),
+          closed_at: tx.sell_time ? new Date(Number(tx.sell_time) * 1000).toISOString() : new Date().toISOString()
+        }).eq("id", existing.data.id);
+      }
+      continue;
+    }
+
+    const inserted = await db.from("real_orders").insert({
+      account_id: account.id,
+      deriv_contract_id: contractId,
+      client_order_id: `reconcile:${contractId}`,
+      symbol: String(tx.underlying_symbol ?? tx.symbol ?? "UNKNOWN"),
+      side: "BUY",
+      quantity: Number(tx.buy_price ?? tx.amount ?? 0) > 0 ? Number(tx.buy_price ?? tx.amount) : 0.0001,
+      entry_price: Number(tx.buy_price ?? 0),
+      exit_price: Number(tx.sell_price ?? 0),
+      status: "CLOSED",
+      realized_pnl: Number(profit),
+      opened_at: tx.buy_time ? new Date(Number(tx.buy_time) * 1000).toISOString() : new Date().toISOString(),
+      closed_at: tx.sell_time ? new Date(Number(tx.sell_time) * 1000).toISOString() : new Date().toISOString()
+    }).select("id").single();
+    if (inserted.error) throw inserted.error;
+
+    const ledgerBalance = Number(currentWallet.available_balance || 0) + Math.max(0, Number(profit));
+    if (Number(profit) > 0) {
+      const ledger = await db.from("real_ledger").insert({
+        account_id: account.id,
+        transaction_type: "TRADE_PNL",
+        reference_id: inserted.data.id,
+        amount: Number(profit),
+        balance_after: Number(account.balance || 0)
+      });
+      if (ledger.error) throw ledger.error;
+
+      const walletUpdate = await db.from("real_profit_wallets").update({
+        available_balance: ledgerBalance,
+        updated_at: new Date().toISOString()
+      }).eq("id", currentWallet.id);
+      if (walletUpdate.error) throw walletUpdate.error;
+
+      const walletTx = await db.from("profit_wallet_transactions").insert({
+        wallet_id: currentWallet.id,
+        transaction_type: "REALIZED_TRADE_PROFIT",
+        amount: Number(profit),
+        balance_after: ledgerBalance,
+        reference_id: inserted.data.id
+      });
+      if (walletTx.error) throw walletTx.error;
+      credited += Number(profit);
+    }
+    reconciled += 1;
+  }
+
+  await db.from("real_trading_audit").insert({
+    account_id: account.id,
+    user_id: userId,
+    action: "RECONCILE_REAL_STATE",
+    result: "SUCCESS",
+    metadata: { reconciled, credited, source: "deriv_profit_table" }
+  });
+
+  return { account_id: account.id, balance: accountUpdate.balance, reconciled, credited_profit: credited };
+}
+
 async function handle(userId: string, body: any) {
   const op = String(body.operation || body.action || "status");
 
@@ -149,15 +265,24 @@ async function handle(userId: string, body: any) {
     const [balance, portfolio, profit, statement] = await Promise.all([
       realWsCall(userId, { balance: 1 }, "balance"),
       realWsCall(userId, { portfolio: 1 }, "portfolio"),
-      realWsCall(userId, { profit_table: 1, limit: 50, sort: "DESC" }, "profit_table"),
+      realWsCall(userId, { profit_table: 1, limit: 100, sort: "DESC" }, "profit_table"),
       realWsCall(userId, { statement: 1, limit: 100 }, "statement")
     ]);
+    await reconcileRealState(userId, balance.balance, profit.profit_table);
     return {
       balance: balance.balance,
       portfolio: portfolio.portfolio,
       profit_table: profit.profit_table,
       statement: statement.statement
     };
+  }
+
+  if (op === "reconcile") {
+    const [balance, profit] = await Promise.all([
+      realWsCall(userId, { balance: 1 }, "balance"),
+      realWsCall(userId, { profit_table: 1, limit: 100, sort: "DESC" }, "profit_table")
+    ]);
+    return await reconcileRealState(userId, balance.balance, profit.profit_table);
   }
 
   if (op === "contract_status") {
@@ -173,7 +298,74 @@ async function handle(userId: string, body: any) {
     await tradingGate(userId);
     if (!body.proposal_id) throw new Error("PROPOSAL_ID_REQUIRED");
     if (!Number.isFinite(Number(body.price)) || Number(body.price) <= 0) throw new Error("INVALID_MAX_PRICE");
-    return realWsCall(userId, { buy: String(body.proposal_id), price: Number(body.price) }, "buy");
+    const clientOrderId = String(body.client_order_id || "").trim();
+    if (!clientOrderId || clientOrderId.length > 128) throw new Error("CLIENT_ORDER_ID_REQUIRED");
+
+    const { account } = await realContext(userId);
+    const existing = await db.from("real_orders").select("id,status,deriv_contract_id")
+      .eq("account_id", account.id).eq("client_order_id", clientOrderId).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data) return { duplicate: true, order: existing.data };
+
+    const result = await realWsCall(userId, {
+      buy: String(body.proposal_id),
+      price: Number(body.price),
+      passthrough: { client_order_id: clientOrderId }
+    }, "buy");
+
+    const bought = result?.buy;
+    const contractId = String(bought?.contract_id || "").trim();
+    if (!contractId) throw new Error("DERIV_BUY_MISSING_CONTRACT_ID");
+
+    const stake = Number(body.stake);
+    const symbol = String(body.symbol || "");
+    if (!Number.isFinite(stake) || stake <= 0 || !symbol) throw new Error("ORDER_METADATA_REQUIRED");
+
+    const inserted = await db.from("real_orders").insert({
+      account_id: account.id,
+      deriv_contract_id: contractId,
+      client_order_id: clientOrderId,
+      symbol,
+      side: "BUY",
+      quantity: stake,
+      entry_price: Number(bought?.buy_price ?? body.price),
+      status: "CONFIRMED"
+    }).select("id,deriv_contract_id,client_order_id,status").single();
+    if (inserted.error) throw inserted.error;
+
+    await db.from("real_trading_audit").insert({
+      account_id: account.id,
+      user_id: userId,
+      action: "REAL_ORDER_SUBMITTED",
+      result: "SUCCESS",
+      metadata: { order_id: inserted.data.id, deriv_contract_id: contractId, symbol, stake }
+    });
+
+    return { ...result, order: inserted.data };
+  }
+
+  if (op === "sell") {
+    await tradingGate(userId);
+    const contractId = String(body.contract_id || "").trim();
+    if (!contractId) throw new Error("CONTRACT_ID_REQUIRED");
+    const price = Number(body.price ?? 0);
+    if (!Number.isFinite(price) || price < 0) throw new Error("INVALID_SELL_PRICE");
+
+    const result = await realWsCall(userId, {
+      sell: Number(contractId),
+      price
+    }, "sell");
+
+    const { account } = await realContext(userId);
+    const profit = Number(result?.sell?.profit ?? result?.sell?.sell_price - result?.sell?.buy_price);
+    await db.from("real_orders").update({
+      status: "CLOSED",
+      exit_price: Number(result?.sell?.sell_price ?? price),
+      realized_pnl: Number.isFinite(profit) ? profit : 0,
+      closed_at: new Date().toISOString()
+    }).eq("account_id", account.id).eq("deriv_contract_id", contractId);
+
+    return result;
   }
 
   if (op === "auto_start") {
