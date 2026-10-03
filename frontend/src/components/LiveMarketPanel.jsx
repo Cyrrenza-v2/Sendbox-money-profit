@@ -41,7 +41,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       } else {
         setLoading(false);
         setDiscoveryComplete(false);
-        setError(reason || "Could not reach Deriv market data from this browser. Check network WebSocket access and the Deriv app ID configuration.");
+        setError(reason || "Could not reach Deriv market data from this browser. Check network WebSocket access.");
         endpointIndex = 0;
         retryTimer = setTimeout(connect, Math.min(30000, 2000 * (2 ** Math.min(retryCount++, 4))));
       }
@@ -62,7 +62,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
 
       connectTimeout = setTimeout(() => {
         if (!symbolsLoaded && !disposed) {
-          scheduleNextEndpoint("Deriv connected too slowly or did not return its active-symbol list. Verify VITE_DERIV_APP_ID and allow WebSocket traffic on your network.");
+          scheduleNextEndpoint("Deriv connected too slowly or did not return its active-symbol list. Allow WebSocket traffic on your network.");
         }
       }, 12000);
 
@@ -70,7 +70,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         if (disposed) return;
         setConnected(true);
         setError("");
-        socket.send(JSON.stringify({ active_symbols: "brief", product_type: "basic", req_id: 1 }));
+        socket.send(JSON.stringify({ active_symbols: "brief", req_id: 1 }));
       };
 
       socket.onmessage = event => {
@@ -105,7 +105,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             setLoading(false);
             setDiscoveryComplete(true);
             setConnected(true);
-            setError(unique.length ? "" : "Deriv connected, but returned an empty active-symbol list for product type 'basic'.");
+            setError(unique.length ? "" : "Deriv connected, but returned an empty active-symbol list.");
 
             // Queue a modest number of tick subscriptions to avoid flooding the public socket.
             tickTimers.forEach(clearTimeout);
@@ -148,7 +148,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         setConnected(false);
         clearConnectionTimeout();
         if (!symbolsLoaded) {
-          scheduleNextEndpoint("Deriv closed the connection before sending active markets. Check the Deriv app ID and network WebSocket access.");
+          scheduleNextEndpoint("Deriv closed the connection before sending active markets. Check network WebSocket access.");
         } else {
           retryTimer = setTimeout(() => {
             endpointIndex = 0;
