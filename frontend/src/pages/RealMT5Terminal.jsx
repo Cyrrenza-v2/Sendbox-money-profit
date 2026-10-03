@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import LiveMarketPanel from "../components/LiveMarketPanel";
 import { supabase } from "../supabaseClient";
@@ -27,7 +28,9 @@ function Chart({candles,price,symbol}){
   </svg>;
 }
 export default function RealMT5Terminal(){
- const [side,setSide]=useState(false),[symbol,setSymbol]=useState("1HZ100V"),[price,setPrice]=useState(null),[feed,setFeed]=useState("WAITING");
+ const [params]=useSearchParams();
+ const initialSymbol=params.get("symbol")||"1HZ100V";
+ const [side,setSide]=useState(false),[symbol,setSymbol]=useState(initialSymbol),[price,setPrice]=useState(null),[feed,setFeed]=useState("WAITING");
  const [candles,setCandles]=useState([]),[ticks,setTicks]=useState([]),[tf,setTf]=useState(300),[account,setAccount]=useState(null),[portfolio,setPortfolio]=useState([]);
  const marketSocketRef=useRef(null);
  const [stake,setStake]=useState("10"),[growth,setGrowth]=useState("1"),[busy,setBusy]=useState(false),[msg,setMsg]=useState(""),[error,setError]=useState("");
