@@ -96,7 +96,7 @@ export default function RealTradingTerminal() {
     <div className="app-main">
       <header className="topbar">
         <button className="menu-button" onClick={() => setSidebarOpen(true)}>☰</button>
-        <span className="topbar-brand">DERIV REAL TRADING TERMINAL</span>
+        <span className="topbar-brand">DERIV LIVE MARKET / SANDBOX TERMINAL</span>
         <span className={armed ? "admin-badge real-badge" : "admin-badge"}>{armed ? "● VERIFIED / ARMED" : "● SAFE LOCK"}</span>
       </header>
       <main className="content">
@@ -108,18 +108,18 @@ export default function RealTradingTerminal() {
             <li>OAuth state and PKCE are handled by the Supabase Deriv service.</li>
             <li>Live account status is read through the authenticated gateway.</li>
             <li>Emergency stop is stored centrally in Supabase.</li>
-            <li>Real-money execution remains locked until the server execution service is explicitly enabled.</li>
+            <li>Execution uses VELTRION internal sandbox funds; no real-money Deriv contract is sent.</li>
           </ul>
           <div className="panel"><b>Deriv connection:</b> {String(connection?.status || "NOT CONNECTED").toUpperCase()}</div>
-          <button className="button danger full" onClick={arm}>VERIFY &amp; ARM TRADING CONTROLS</button>
+          <button className="button danger full" onClick={arm}>CONNECT DERIV + SANDBOX</button>
         </section> : <section className="panel">
           <div className="page-heading">
-            <div><span className="eyebrow real-eyebrow">AUTHENTICATED DERIV CONTROL</span><h1>Trading terminal</h1></div>
+            <div><span className="eyebrow real-eyebrow">AUTHENTICATED DERIV MARKET / VELTRION SANDBOX</span><h1>Live market → sandbox execution</h1></div>
             <button className={emergencyStopped ? "button primary" : "button danger"} onClick={() => setStop(!emergencyStopped)}>
               {emergencyStopped ? "RELEASE GLOBAL STOP" : "EMERGENCY STOP"}
             </button>
           </div>
-          <LiveMarketPanel compact selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={tick => setMarketPrice(tick?.quote ?? null)} />
+          <LiveMarketPanel compact selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={tick => setMarketPrice(tick?.quote ?? null)} />\n          <div className="panel"><b>Execution path:</b> Real Deriv market price → VELTRION sandbox funds → sandbox order → sandbox position/P&amp;L. <b>No real Deriv order is sent.</b></div>
           <div className="real-grid">
             <label>Stake amount (USD)<input value={stake} onChange={e => setStake(e.target.value)} type="number" min="0.01" step="0.01" disabled={emergencyStopped}/></label>
             <label>Deriv symbol<input value={symbol} onChange={e => setSymbol(e.target.value)} disabled={emergencyStopped}/></label>
