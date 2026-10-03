@@ -13,6 +13,7 @@ import WorkspacePage from "./pages/WorkspacePage";
 import TradingTerminal from "./pages/TradingTerminal";
 import AIAssistants from "./pages/AIAssistants";
 import MarketDetails from "./pages/MarketDetails";
+import Wallet from "./pages/Wallet";
 
 const screens = [
  ["/app/home","Home","home"],
@@ -42,6 +43,7 @@ export default function App(){
       section==="analytics" ? <Route key={path} path={path} element={<AnalyticsOverviewLive/>}/> :
       section==="deriv" ? <Route key={path} path={path} element={<ConnectDeriv/>}/> :
       section==="ai" ? <Route key={path} path={path} element={<AIAssistants/>}/> :
+      section==="wallet" ? <Route key={path} path={path} element={<Wallet/>}/> :
       <Route key={path} path={path} element={<WorkspacePage title={title} section={section}/>} />
     )}
     <Route path="/app/trading/market-details" element={<MarketDetails/>}/>
