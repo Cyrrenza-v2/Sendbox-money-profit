@@ -84,4 +84,4 @@ create index if not exists audit_logs_resource_timestamp_idx on public.audit_log
 -- Prevent direct public execution of the existing privileged RPCs.
 revoke execute on function public.claim_veltrion_owner() from public, anon, authenticated;
 revoke execute on function public.request_profit_withdrawal(uuid,numeric,text) from public, anon, authenticated;
-revoke execute on function public.set_global_emergency_stop(boolean) from public, anon, authenticated;
+revoke execute on function public.set_global_emergency_stop(boolean) from public, anon, authenticated;\ngrant execute on function public.set_global_emergency_stop(boolean) to service_role;
