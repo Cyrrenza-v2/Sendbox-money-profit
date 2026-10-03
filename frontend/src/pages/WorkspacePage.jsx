@@ -41,7 +41,7 @@ function MarketWorkspace({ title }) {
    <div className="market-account-card market-account-state"><span>TRADING MODE</span><strong>Sandbox only</strong><small>Market browsing does not execute an order</small></div>
   </div>
   {accountState.error&&<div className="vel-error" role="status">{accountState.error}</div>}
-  <LiveMarketPanel onSymbolChange={()=>{}} onOpenTerminal={symbol=>navigate(`/app/trading/terminal?symbol=${encodeURIComponent(symbol)}`)}/>
+  <LiveMarketPanel onSymbolChange={()=>{}} onOpenTerminal={symbol=>navigate(`/app/trading/market-details?symbol=${encodeURIComponent(symbol)}`)}/>
  </div>;
 }
 export default function WorkspacePage({title,section}){
