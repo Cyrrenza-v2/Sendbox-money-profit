@@ -3,7 +3,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { supabase, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "../supabaseClient";
 
 const navGroups = [
-  { label: "COMMAND", items: [["Home","/app/home","⌂"],["Trading Terminal","/app/trading/terminal","▥"],["Markets","/app/trading/markets","↗"],["Positions","/app/trading/positions","◈"],["Orders","/app/trading/orders","≋"],["Trade History","/app/trading/history","◷"],["AI Market Assistant","/app/trading/ai","✦"]] },
+  { label: "COMMAND", items: [["Home","/app/home","⌂"],["Markets","/app/trading/markets","↗"],["Portfolio","/app/trading/positions","◈"],["Orders","/app/trading/orders","≋"],["Trade History","/app/trading/history","◷"],["AI Market Assistant","/app/trading/ai","✦"]] },
   { label: "ACCOUNTS & INFRASTRUCTURE", items: [["Deriv Connection","/app/deriv/account","⚡"],["MT5 Infrastructure","/app/mt5/overview","▦"],["Sandbox","/app/sandbox/overview","◇"],["Real Account","/app/real/account","▣"],["Profit Wallet","/app/wallet/overview","$"]] },
   { label: "CONTROL", items: [["Analytics","/app/analytics/performance","▥"],["Operations","/app/operations/health","⚙"],["Security","/app/security/overview","⬡"],["Settings","/app/settings","☷"]] },
 ];
@@ -24,7 +24,7 @@ async function fetchSystemHealth() {
 export default function AppShell() {
   const [drawerOpen,setDrawerOpen]=useState(false), [health,setHealth]=useState("CHECKING"), [mode,setMode]=useState("SANDBOX"), [userEmail,setUserEmail]=useState("");
   const location=useLocation(), navigate=useNavigate();
-  const pageName=useMemo(()=>{ const all=navGroups.flatMap(g=>g.items); return all.find(([,path])=>path===location.pathname)?.[0] || (location.pathname.endsWith("alerts")?"Operations Alerts":"VELTRION"); },[location.pathname]);
+  const pageName=useMemo(()=>{ const all=navGroups.flatMap(g=>g.items); return all.find(([,path])=>path===location.pathname)?.[0] || (location.pathname.includes("/app/trading/terminal")?"Market Terminal":location.pathname.endsWith("alerts")?"Operations Alerts":"VELTRION"); },[location.pathname]);
 
   useEffect(()=>{ let alive=true; async function refresh(){ try { const data=await fetchSystemHealth(); const status=String(data?.globalStatus||data?.status||(data?.ok?"LIVE":"DEGRADED")).toUpperCase(); if(alive)setHealth(["OK","HEALTHY","ONLINE","LIVE","CONNECTED"].includes(status)?"LIVE":status.includes("DEGRAD")?"DEGRADED":"OFFLINE"); } catch { if(alive)setHealth("OFFLINE"); } } refresh(); const timer=window.setInterval(refresh,30000); return()=>{alive=false;window.clearInterval(timer)}; },[]);
   useEffect(()=>{let alive=true; supabase.auth.getUser().then(({data})=>{if(alive)setUserEmail(data?.user?.email||"Authorized admin")}); return()=>{alive=false}},[]);
