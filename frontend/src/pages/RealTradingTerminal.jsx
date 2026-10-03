@@ -3,6 +3,7 @@ import Sidebar from "../components/Sidebar";
 import LiveMarketPanel from "../components/LiveMarketPanel";
 import { supabase } from "../supabaseClient";
 import { api } from "../lib/api";
+import { sandboxEngine } from "../services/sandboxEngine";
 
 export default function RealTradingTerminal() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -14,16 +15,21 @@ export default function RealTradingTerminal() {
   const [pendingSide, setPendingSide] = useState(null);
   const [message, setMessage] = useState("");
   const [connection, setConnection] = useState(null);
+  const [sandboxAccount, setSandboxAccount] = useState(null);
+  const [marketPrice, setMarketPrice] = useState(null);
 
   async function loadState() {
     try {
-      const [{ data: controls }, deriv] = await Promise.all([
+      const [{ data: controls }, deriv, sandbox] = await Promise.all([
         supabase.from("emergency_controls").select("control_key,is_active").order("control_key"),
         api("/deriv/status"),
+        sandboxEngine.snapshot(),
       ]);
       const stop = controls?.find(x => x.control_key === "EMERGENCY_STOP")?.is_active ?? true;
       setEmergencyStopped(Boolean(stop));
       setConnection(deriv?.data || deriv || null);
+      const accounts = sandbox?.data?.accounts || [];
+      setSandboxAccount(accounts.find(a => String(a.status).toLowerCase() === "active") || accounts[0] || null);
     } catch (error) {
       setMessage(error?.message || "Unable to load trading state.");
     }
@@ -66,27 +72,22 @@ export default function RealTradingTerminal() {
     const side = pendingSide;
     setConfirmOpen(false);
     if (!side || !armed || emergencyStopped) return;
-    setMessage("Validating authenticated trading request…");
+    setMessage("Executing with VELTRION sandbox funds at the current Deriv market price…");
     try {
-      const result = await api("/trading/execute", {
-        method: "POST",
-        body: JSON.stringify({
-          source: "deriv",
-          environment: "real",
-          symbol,
-          side,
-          stake: Number(stake),
-          quantity: Number(stake),
-          contract_type: side === "BUY" ? "CALL" : "PUT",
-          idempotency_key: crypto.randomUUID(),
-          request_id: crypto.randomUUID(),
-        }),
+      if (!sandboxAccount?.id) throw new Error("SANDBOX_ACCOUNT_NOT_AVAILABLE");
+      if (!Number.isFinite(Number(marketPrice)) || Number(marketPrice) <= 0) throw new Error("LIVE_MARKET_PRICE_NOT_AVAILABLE");
+      const result = await sandboxEngine.executeOrder({
+        account_id: sandboxAccount.id,
+        symbol,
+        side,
+        quantity: Number(stake),
+        price: Number(marketPrice),
+        idempotency_key: crypto.randomUUID(),
       });
-      setMessage(result?.status === "validated"
-        ? "Trading request validated by Supabase. No real-money contract was sent because the production execution lock is still active."
-        : "Trading request processed.");
+      const order = result?.order || result?.data?.order || result?.data || result;
+      setMessage(`Sandbox order executed using VELTRION internal funds. ${side === "BUY" ? "CALL" : "PUT"} ${symbol} at ${Number(marketPrice).toLocaleString("en-US", { maximumFractionDigits: 8 })}. No real Deriv money was used.${order?.id ? ` Order ID: ${order.id}` : ""}`);
     } catch (error) {
-      setMessage(error?.message || "REAL_ORDER_REJECTED");
+      setMessage(error?.message || "SANDBOX_ORDER_REJECTED");
     }
   }
 
@@ -118,7 +119,7 @@ export default function RealTradingTerminal() {
               {emergencyStopped ? "RELEASE GLOBAL STOP" : "EMERGENCY STOP"}
             </button>
           </div>
-          <LiveMarketPanel compact selectedSymbol={symbol} onSymbolChange={setSymbol} />
+          <LiveMarketPanel compact selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={tick => setMarketPrice(tick?.quote ?? null)} />
           <div className="real-grid">
             <label>Stake amount (USD)<input value={stake} onChange={e => setStake(e.target.value)} type="number" min="0.01" step="0.01" disabled={emergencyStopped}/></label>
             <label>Deriv symbol<input value={symbol} onChange={e => setSymbol(e.target.value)} disabled={emergencyStopped}/></label>
@@ -128,13 +129,13 @@ export default function RealTradingTerminal() {
             <button className="button danger" disabled={emergencyStopped} onClick={() => requestOrder("SELL")}>VALIDATE SELL / PUT</button>
           </div>
           {emergencyStopped && <div className="stop-notice">Global emergency stop is active. New trading requests are blocked.</div>}
-          {message && <div className={message.startsWith("Deriv account verified") ? "panel" : "error-panel"}>{message}</div>}
+          {message && <div className={message.includes("Sandbox order executed") || message.startsWith("Deriv account verified") ? "panel" : "error-panel"}>{message}</div>}
         </section>}
       </main>
     </div>
     {confirmOpen && <div className="confirm-backdrop"><div className="confirm-modal">
       <h2>Confirm trading request</h2>
-      <p>This sends an authenticated request to the Supabase trading service. The current production execution lock prevents it from placing a real-money contract.</p>
+      <p>This order will use VELTRION internal sandbox funds and the current live Deriv market price. It will not place a real-money Deriv contract.</p>
       <div className="confirm-data"><b>{pendingSide === "BUY" ? "CALL" : "PUT"}</b><span>{symbol}</span><span>${Number(stake || 0).toFixed(2)} USD stake</span></div>
       <div className="confirm-actions"><button className="button" onClick={() => setConfirmOpen(false)}>CANCEL</button><button className="button danger" onClick={submitOrder}>CONFIRM REQUEST</button></div>
     </div></div>}
