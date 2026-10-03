@@ -298,7 +298,74 @@ async function handle(userId: string, body: any) {
     await tradingGate(userId);
     if (!body.proposal_id) throw new Error("PROPOSAL_ID_REQUIRED");
     if (!Number.isFinite(Number(body.price)) || Number(body.price) <= 0) throw new Error("INVALID_MAX_PRICE");
-    return realWsCall(userId, { buy: String(body.proposal_id), price: Number(body.price) }, "buy");
+    const clientOrderId = String(body.client_order_id || "").trim();
+    if (!clientOrderId || clientOrderId.length > 128) throw new Error("CLIENT_ORDER_ID_REQUIRED");
+
+    const { account } = await realContext(userId);
+    const existing = await db.from("real_orders").select("id,status,deriv_contract_id")
+      .eq("account_id", account.id).eq("client_order_id", clientOrderId).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data) return { duplicate: true, order: existing.data };
+
+    const result = await realWsCall(userId, {
+      buy: String(body.proposal_id),
+      price: Number(body.price),
+      passthrough: { client_order_id: clientOrderId }
+    }, "buy");
+
+    const bought = result?.buy;
+    const contractId = String(bought?.contract_id || "").trim();
+    if (!contractId) throw new Error("DERIV_BUY_MISSING_CONTRACT_ID");
+
+    const stake = Number(body.stake);
+    const symbol = String(body.symbol || "");
+    if (!Number.isFinite(stake) || stake <= 0 || !symbol) throw new Error("ORDER_METADATA_REQUIRED");
+
+    const inserted = await db.from("real_orders").insert({
+      account_id: account.id,
+      deriv_contract_id: contractId,
+      client_order_id: clientOrderId,
+      symbol,
+      side: "BUY",
+      quantity: stake,
+      entry_price: Number(bought?.buy_price ?? body.price),
+      status: "CONFIRMED"
+    }).select("id,deriv_contract_id,client_order_id,status").single();
+    if (inserted.error) throw inserted.error;
+
+    await db.from("real_trading_audit").insert({
+      account_id: account.id,
+      user_id: userId,
+      action: "REAL_ORDER_SUBMITTED",
+      result: "SUCCESS",
+      metadata: { order_id: inserted.data.id, deriv_contract_id: contractId, symbol, stake }
+    });
+
+    return { ...result, order: inserted.data };
+  }
+
+  if (op === "sell") {
+    await tradingGate(userId);
+    const contractId = String(body.contract_id || "").trim();
+    if (!contractId) throw new Error("CONTRACT_ID_REQUIRED");
+    const price = Number(body.price ?? 0);
+    if (!Number.isFinite(price) || price < 0) throw new Error("INVALID_SELL_PRICE");
+
+    const result = await realWsCall(userId, {
+      sell: Number(contractId),
+      price
+    }, "sell");
+
+    const { account } = await realContext(userId);
+    const profit = Number(result?.sell?.profit ?? result?.sell?.sell_price - result?.sell?.buy_price);
+    await db.from("real_orders").update({
+      status: "CLOSED",
+      exit_price: Number(result?.sell?.sell_price ?? price),
+      realized_pnl: Number.isFinite(profit) ? profit : 0,
+      closed_at: new Date().toISOString()
+    }).eq("account_id", account.id).eq("deriv_contract_id", contractId);
+
+    return result;
   }
 
   if (op === "auto_start") {
