@@ -6,6 +6,7 @@ export default function ConnectDeriv() {
   const [status, setStatus] = useState("CHECKING");
   const [account, setAccount] = useState(null);
   const [error, setError] = useState("");
+  const [sessionStatus, setSessionStatus] = useState("NOT VERIFIED");
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
@@ -54,6 +55,54 @@ export default function ConnectDeriv() {
     load();
   }, [load, params]);
 
+  const verifyRealSession = async () => {
+    setError("");
+    setSessionStatus("ISSUING SESSION");
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!session?.access_token) throw new Error("Sign in to VELTRION first.");
+
+      const { data, error: invokeError } = await supabase.functions.invoke("deriv-real-session", {
+        body: { account_id: account?.deriv_loginid || undefined },
+      });
+      if (invokeError) throw invokeError;
+      if (!data?.ok || !data?.websocket?.url) throw new Error(data?.error || "Deriv real WebSocket session was not issued.");
+
+      setSessionStatus("CONNECTING");
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        const ws = new WebSocket(data.websocket.url);
+        const timeout = window.setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          try { ws.close(); } catch {}
+          reject(new Error("Timed out opening the authenticated Deriv real WebSocket."));
+        }, 10000);
+        ws.onopen = () => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeout);
+          try { ws.close(); } catch {}
+          resolve();
+        };
+        ws.onerror = () => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeout);
+          try { ws.close(); } catch {}
+          reject(new Error("Deriv issued a session, but the authenticated real WebSocket could not be opened."));
+        };
+      });
+
+      setSessionStatus("VERIFIED");
+      await load();
+    } catch (e) {
+      setSessionStatus("FAILED");
+      setError(e?.message || "Unable to verify the authenticated Deriv real session.");
+    }
+  };
+
   const connect = async () => {
     setError("");
     setStatus("STARTING OAUTH");
@@ -96,6 +145,10 @@ export default function ConnectDeriv() {
           <span>SERVER-VERIFIED</span>
         </div>
 
+        <div className="success-box">
+          Real execution channel: <b>{sessionStatus}</b>. Verification opens the authenticated real WebSocket only; it does not place a trade.
+        </div>
+
         {params.get("deriv") === "connected" && (
           <div className="success-box">
             OAuth authorization completed. VELTRION verified the real Deriv account server-side.
@@ -128,6 +181,9 @@ export default function ConnectDeriv() {
 
         <button className="primary" onClick={connect} disabled={status === "STARTING OAUTH"}>
           {status === "STARTING OAUTH" ? "CONNECTING…" : "CONNECT / REFRESH DERIV"}
+        </button>
+        <button className="secondary-btn" onClick={verifyRealSession} disabled={sessionStatus === "ISSUING SESSION" || sessionStatus === "CONNECTING"}>
+          {sessionStatus === "ISSUING SESSION" || sessionStatus === "CONNECTING" ? "VERIFYING REAL CHANNEL…" : "VERIFY REAL TRADING CHANNEL"}
         </button>
         <button className="secondary-btn" onClick={() => navigate("/")}>
           BACK TO COMMAND CENTER
