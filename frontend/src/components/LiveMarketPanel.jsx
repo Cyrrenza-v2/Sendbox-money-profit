@@ -40,6 +40,13 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
     let failureHandled = false;
     let connectTimeout = null;
     let tickTimers = [];
+    const subscribedSymbols = new Set();
+
+    const subscribeSymbol = symbol => {
+      if (!symbol || disposed || socket?.readyState !== WebSocket.OPEN || subscribedSymbols.has(symbol)) return;
+      subscribedSymbols.add(symbol);
+      socket.send(JSON.stringify({ ticks: symbol, subscribe: 1, req_id: 9000 + subscribedSymbols.size }));
+    };
 
     const clearConnectionTimeout = () => {
       if (connectTimeout) clearTimeout(connectTimeout);
@@ -51,6 +58,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       failureHandled = true;
       clearConnectionTimeout();
       setConnected(false);
+      subscribedSymbols.clear();
       try { socket?.close(); } catch {}
       if (endpointIndex < DERIV_PUBLIC_ENDPOINTS.length - 1) {
         endpointIndex += 1;
@@ -88,10 +96,9 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         if (disposed) return;
         setConnected(true);
         setError("");
+        subscribedSymbols.clear();
         socket.send(JSON.stringify({ active_symbols: "brief", req_id: 1 }));
-        if (selectedSymbolRef.current) {
-          socket.send(JSON.stringify({ ticks: selectedSymbolRef.current, subscribe: 1, req_id: 9000 }));
-        }
+        subscribeSymbol(selectedSymbolRef.current);
       };
 
       socket.onmessage = event => {
@@ -141,15 +148,9 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             // Queue a modest number of tick subscriptions to avoid flooding the public socket.
             tickTimers.forEach(clearTimeout);
             tickTimers = [];
-            if (selectedSymbolRef.current) {
-              socket.send(JSON.stringify({ ticks: selectedSymbolRef.current, subscribe: 1, req_id: 9000 }));
-            }
+            subscribeSymbol(selectedSymbolRef.current);
             unique.slice(0, 80).forEach((item, index) => {
-              tickTimers.push(setTimeout(() => {
-                if (!disposed && socket?.readyState === WebSocket.OPEN) {
-                  socket.send(JSON.stringify({ ticks: item.symbol, subscribe: 1, req_id: 1000 + index }));
-                }
-              }, index * 80));
+              tickTimers.push(setTimeout(() => subscribeSymbol(item.symbol), index * 80));
             });
             return;
           }
