@@ -106,7 +106,8 @@ export default function RealTradingTerminal() {
     const side = String(pendingSide || "").toUpperCase();
     const expectedContract = contractLabel(side);
     setConfirmOpen(false);
-    if (!["BUY", "SELL"].includes(side) || !armed || emergencyStopped) return;
+    if (!["BUY", "SELL"].includes(side) || !armed || emergencyStopped || submitting) return;
+    setSubmitting(true);
     setMessage("Executing with VELTRION sandbox funds at the current Deriv market price…");
     try {
       if (!sandboxAccount?.id) throw new Error("SANDBOX_ACCOUNT_NOT_AVAILABLE");
@@ -126,6 +127,8 @@ export default function RealTradingTerminal() {
       setMessage(`Sandbox order executed using VELTRION internal funds. ${expectedContract} (${side}) ${symbol} at ${Number(marketPrice).toLocaleString("en-US", { maximumFractionDigits: 8 })}. No real Deriv money was used.${order?.id ? ` Order ID: ${order.id}` : ""}`);
     } catch (error) {
       setMessage(error?.message || "SANDBOX_ORDER_REJECTED");
+    } finally {
+      setSubmitting(false);
     }
   }
 
