@@ -95,16 +95,39 @@ async function realWsCall(userId: string, payload: Record<string, unknown>, expe
 }
 
 async function tradingGate(userId: string) {
-  const [{ data: settings }, { data: account }, { data: kill }] = await Promise.all([
-    db.from("production_freeze").select("real_trading_enabled").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+  const [
+    { data: freezeRows, error: freezeError },
+    { data: appRows, error: appError },
+    { data: account, error: accountError },
+    { data: kill, error: killError },
+    { data: controls, error: controlsError }
+  ] = await Promise.all([
+    db.from("production_freeze").select("real_trading_enabled").order("updated_at", { ascending: false }).limit(1),
+    db.from("app_settings").select("real_trading_enabled").order("updated_at", { ascending: false }).limit(1),
     db.from("real_trading_accounts").select("is_active,emergency_stopped").eq("user_id", userId).maybeSingle(),
-    db.from("kill_switches").select("enabled").eq("scope", "deriv").maybeSingle()
+    db.from("kill_switches").select("enabled").eq("scope", "deriv").maybeSingle(),
+    db.from("emergency_controls").select("control_key,is_active").in("control_key", ["EMERGENCY_STOP", "REAL_TRADING"])
   ]);
 
-  if (settings?.real_trading_enabled !== true) throw new Error("REAL_TRADING_DISABLED");
-  if (!account?.is_active) throw new Error("REAL_ACCOUNT_INACTIVE");
-  if (account?.emergency_stopped) throw new Error("REAL_ACCOUNT_EMERGENCY_STOPPED");
-  if (kill?.enabled) throw new Error("DERIV_TRADING_KILL_SWITCH");
+  // Fail closed on database errors, missing control records, or conflicting control states.
+  if (freezeError || appError || accountError || killError || controlsError)
+    throw new Error("TRADING_SAFETY_CONTROLS_UNAVAILABLE");
+
+  const freeze = freezeRows?.[0];
+  const appSettings = appRows?.[0];
+  const emergencyStop = controls?.find((control: any) => control.control_key === "EMERGENCY_STOP");
+  const realTradingControl = controls?.find((control: any) => control.control_key === "REAL_TRADING");
+
+  if (!freeze || freeze.real_trading_enabled !== true ||
+      !appSettings || appSettings.real_trading_enabled !== true)
+    throw new Error("REAL_TRADING_DISABLED");
+  if (!account) throw new Error("REAL_ACCOUNT_NOT_FOUND");
+  if (account.emergency_stopped) throw new Error("REAL_ACCOUNT_EMERGENCY_STOPPED");
+  if (!account.is_active) throw new Error("REAL_ACCOUNT_INACTIVE");
+  if (!emergencyStop || emergencyStop.is_active) throw new Error("EMERGENCY_STOP_ACTIVE_OR_UNCONFIGURED");
+  if (!realTradingControl || !realTradingControl.is_active) throw new Error("REAL_TRADING_CONTROL_DISABLED");
+  if (!kill) throw new Error("DERIV_TRADING_KILL_SWITCH_MISSING");
+  if (kill.enabled) throw new Error("DERIV_TRADING_KILL_SWITCH");
 }
 
 function validateAccuTemplate(t: any) {
