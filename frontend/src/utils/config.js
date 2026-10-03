@@ -2,7 +2,7 @@ import { supabase } from "../supabaseClient";
 
 export const SYSTEM_CONFIG = Object.freeze({
   environment: "PRODUCTION",
-  tradingMode: "SANDBOX",
+  tradingMode: "REAL",
   realTradingEnabled: false,
 });
 
