@@ -33,7 +33,7 @@ export default function TradingTerminal() {
   const [tick,setTick]=useState(null),[feed,setFeed]=useState("WAITING"),[candles,setCandles]=useState([]),[timeframe,setTimeframe]=useState("M5");
   const [account,setAccount]=useState(null),[positions,setPositions]=useState([]),[orders,setOrders]=useState([]);
   const [quantity,setQuantity]=useState("0.01"),[stopLoss,setStopLoss]=useState(""),[takeProfit,setTakeProfit]=useState("");
-  const [ai,setAi]=useState(null),[aiBusy,setAiBusy]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[activeTab,setActiveTab]=useState("positions");
+  const [ai,setAi]=useState(null),[aiBusy,setAiBusy]=useState(false),[e2eBusy,setE2eBusy]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[activeTab,setActiveTab]=useState("positions");
   const lastMarkRef=useRef(0),priceRef=useRef(null);
   useEffect(()=>{const requested=searchParams.get("symbol");if(requested)setSymbol(requested);},[searchParams]);
 
@@ -76,14 +76,49 @@ export default function TradingTerminal() {
   const symbolName=symbol.replace(/^frx/,"").replace(/^cry/,"").replace(/^R_/, "Volatility ");
   const openPnl=useMemo(()=>positions.reduce((sum,p)=>sum+Number(p.unrealized_pnl||0),0),[positions]);
   const runAI=async()=>{
-    if(!tick)return setError("Wait for a live market price before requesting analysis.");
+    if(!tick){setError("Wait for a live market price before requesting analysis.");return null;}
     setError("");setAiBusy(true);setAi(null);
     const recent=candles.slice(-12).map(c=>({open:c.open,high:c.high,low:c.low,close:c.close}));
     const observedAt=new Date(Number(tick.epoch)*1000).toISOString();
     const prompt=`Provide a concise, risk-aware educational market review for ${symbol} on ${timeframe}. The price is from the verified Deriv public feed. Observed price: ${tick.price}. Data timestamp: ${observedAt}. Recent OHLC candles: ${JSON.stringify(recent)}. Return these sections: Trend (bullish/bearish/neutral with reasons), Volatility, Key observations/indicators that can be inferred from supplied data, Risk levels and invalidation conditions, and Data limitations/confidence. Do not invent indicators that cannot be calculated from the supplied data. Do not promise returns or give certainty. This is sandbox decision support only.`;
-    try{const {data,error:invokeError}=await supabase.functions.invoke("ai-assistant",{body:{mode:"advisor",message:prompt,history:[]}});if(invokeError)throw new Error(data?.error||invokeError.message);if(!data?.ok||!data?.answer)throw new Error(data?.error||"AI service did not return an analysis.");setAi({text:data.answer,symbol,timeframe,price:tick.price,dataEpoch:tick.epoch,at:Date.now()});}
-    catch(e){setError("AI review unavailable: "+(e.message||"Please retry."));}finally{setAiBusy(false);}
+    try{
+      const {data,error:invokeError}=await supabase.functions.invoke("ai-assistant",{body:{mode:"advisor",message:prompt,history:[]}});
+      if(invokeError)throw new Error(data?.error||invokeError.message);
+      if(!data?.ok||!data?.answer)throw new Error(data?.error||"AI service did not return an analysis.");
+      const review={text:data.answer,symbol,timeframe,price:tick.price,dataEpoch:tick.epoch,at:Date.now()};
+      setAi(review);return review;
+    }catch(e){setError("AI review unavailable: "+(e.message||"Please retry."));return null;}finally{setAiBusy(false);}
   };
+  const runFullE2E=async()=>{
+    if(e2eBusy||aiBusy||busy)return;
+    setError("");setNotice("");
+    if(!tick)return setError("E2E test requires a verified live Deriv tick.");
+    if(!account)return setError("E2E test requires an authenticated sandbox account.");
+    setE2eBusy(true);
+    try{
+      const review=await runAI();
+      if(!review)throw new Error("AI review did not complete.");
+      const testKey=crypto.randomUUID();
+      const open=await sandboxEngine.executeOrder({account_id:account.id,symbol,side:"BUY",quantity:0.01,price:tick.price,idempotency_key:testKey});
+      const position=open?.position||open?.data?.position||null;
+      await sandboxEngine.mark({symbol,price:tick.price});
+      const snap=await sandboxEngine.snapshot();
+      const candidate=(snap.data?.positions||[]).find(p=>position?.id===p.id)|| (snap.data?.positions||[]).find(p=>p.symbol===symbol&&p.source_order_id===(open?.order?.id||open?.data?.order?.id));
+      if(!candidate)throw new Error("Sandbox position was not created by the E2E order.");
+      await sandboxEngine.closePosition({position_id:candidate.id,exit_price:tick.price,idempotency_key:crypto.randomUUID()});
+      const [finalSnap,aiAudit]=await Promise.all([
+        sandboxEngine.snapshot(),
+        supabase.from("ai_analysis").select("id,analysis_type,model,created_at").eq("analysis_type","trading_advisor_chat").order("created_at",{ascending:false}).limit(1)
+      ]);
+      const closed=(finalSnap.data?.orders||[]).find(o=>o.id===(open?.order?.id||open?.data?.order?.id)|| (o.symbol===symbol&&o.closed_at));
+      if(!closed||!closed.closed_at)throw new Error("Sandbox close/history verification failed.");
+      if(aiAudit.error||!aiAudit.data?.length)throw new Error("AI audit record was not found after the successful AI response.");
+      await refresh();
+      setNotice(`FULL E2E PASS · LIVE TICK ✓ · CANDLES ${candles.length>0?"✓":"CHECK"} · AI REVIEW ✓ · AI AUDIT ✓ · SANDBOX ORDER ✓ · POSITION/P&L ✓ · CLOSE ✓ · HISTORY ✓`);
+    }catch(e){setError("Full E2E verification failed: "+(e.message||"Please retry."));}
+    finally{setE2eBusy(false);}
+  };
+
   const execute=async side=>{
     setError("");setNotice("");
     const size=Number(quantity),sl=stopLoss.trim()===""?null:Number(stopLoss),tp=takeProfit.trim()===""?null:Number(takeProfit);
@@ -124,7 +159,7 @@ export default function TradingTerminal() {
         <div className="vt-order-actions"><button className="vt-buy" disabled={busy||!tick||!account} onClick={()=>execute("BUY")}>{busy?"PROCESSING…":"BUY / LONG"}</button><button className="vt-sell" disabled={busy||!tick||!account} onClick={()=>execute("SELL")}>{busy?"PROCESSING…":"SELL / SHORT"}</button></div>
         <small className="vt-gate-note">Orders require a current AI review plus a confirmation tap. They are sent only to the VELTRION sandbox service. No real money is used.</small>
       </section>
-      <section className="vt-panel"><div className="vt-section-title"><div><h2>AI Market Review</h2><p>Optional educational context; not a trade signal</p></div><span className="vt-ai-tag">ADVISORY</span></div><button className="vt-ai-button" onClick={runAI} disabled={aiBusy||!tick}>{aiBusy?"ANALYZING…":"REVIEW THIS MARKET"}</button>{ai&&ai.symbol===symbol&&<div className="vt-ai-result"><div className="vt-ai-meta">Reviewed {new Date(ai.at).toLocaleTimeString()} · {ai.symbol} · {ai.timeframe} · observed {fmt(ai.price,8)}</div><p>{ai.text}</p></div>}<div className="vt-disclaimer">AI output can be wrong and never places, changes or closes an order.</div></section>
+      <section className="vt-panel"><div className="vt-section-title"><div><h2>AI Market Review</h2><p>Optional educational context; not a trade signal</p></div><span className="vt-ai-tag">ADVISORY</span></div><button className="vt-ai-button" onClick={runAI} disabled={aiBusy||e2eBusy||!tick}>{aiBusy?"ANALYZING…":"REVIEW THIS MARKET"}</button><button className="vt-ai-button" onClick={runFullE2E} disabled={aiBusy||e2eBusy||busy||!tick||!account}>{e2eBusy?"RUNNING FULL E2E…":"RUN FULL SANDBOX E2E"}</button>{ai&&ai.symbol===symbol&&<div className="vt-ai-result"><div className="vt-ai-meta">Reviewed {new Date(ai.at).toLocaleTimeString()} · {ai.symbol} · {ai.timeframe} · observed {fmt(ai.price,8)}</div><p>{ai.text}</p></div>}<div className="vt-disclaimer">AI output can be wrong and never places, changes or closes an order.</div></section>
     </div>
     <section className="vt-panel"><div className="vt-section-title"><div><h2>Trading Activity</h2><p>Positions and orders recorded by the sandbox service</p></div><div className="vt-activity-tabs"><button className={activeTab==="positions"?"active":""} onClick={()=>setActiveTab("positions")}>Positions ({positions.length})</button><button className={activeTab==="orders"?"active":""} onClick={()=>setActiveTab("orders")}>Orders ({orders.length})</button></div></div>
       {activeTab==="positions"?(positions.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Market</th><th>Side</th><th>Size</th><th>Entry</th><th>Current</th><th>Stop loss</th><th>Take profit</th><th>Floating P/L</th><th>Action</th></tr></thead><tbody>{positions.map(p=><tr key={p.id}><td>{p.symbol}</td><td className={String(p.side).toUpperCase()==="BUY"?"vt-positive":"vt-negative"}>{p.side}</td><td>{p.quantity}</td><td>{fmt(Number(p.entry_price),8)}</td><td>{fmt(Number(p.current_price),8)}</td><td>{fmt(Number(p.stop_loss),8)}</td><td>{fmt(Number(p.take_profit),8)}</td><td className={Number(p.unrealized_pnl)>=0?"vt-positive":"vt-negative"}>{fmt(Number(p.unrealized_pnl),2)}</td><td><button className="vt-close" disabled={busy||!tick} onClick={()=>close(p)}>Close</button></td></tr>)}</tbody></table></div>:<div className="vt-empty">No open sandbox positions. Confirm a Buy or Sell sandbox order to see it here.</div>):(orders.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Time</th><th>Market</th><th>Side</th><th>Size</th><th>Price</th><th>Status</th><th>Realized P/L</th></tr></thead><tbody>{orders.map(o=><tr key={o.id}><td>{o.created_at?new Date(o.created_at).toLocaleString():"—"}</td><td>{o.symbol}</td><td>{o.side}</td><td>{o.quantity}</td><td>{fmt(Number(o.price),8)}</td><td>{o.status||"—"}</td><td>{o.realized_pnl==null?"—":fmt(Number(o.realized_pnl),2)}</td></tr>)}</tbody></table></div>:<div className="vt-empty">No sandbox order records were returned.</div>)}
