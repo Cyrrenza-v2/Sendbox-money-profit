@@ -44,7 +44,11 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
     const subscribeSymbol = symbol => {
       if (!symbol || disposed || socket?.readyState !== WebSocket.OPEN || subscribedSymbols.has(symbol)) return;
       subscribedSymbols.add(symbol);
-      socket.send(JSON.stringify({ ticks: symbol, subscribe: 1, req_id: 9000 + subscribedSymbols.size }));
+      socket.send(JSON.stringify({
+        ticks: symbol,
+        subscribe: 1,
+        req_id: 9000 + subscribedSymbols.size
+      }));
     };
     subscribeSymbolRef.current = subscribeSymbol;
 
