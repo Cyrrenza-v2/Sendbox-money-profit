@@ -136,12 +136,16 @@ async function callback(code: string, state: string) {
     if (accountError) throw accountError;
   }
 
+  const primaryRealAccount = real.find((a: any) => String(a.account_id || "").trim() === ids[0]);
   await admin.from("deriv_connections").upsert({
     user_id: uid,
     status: "connected",
+    deriv_loginid: ids[0] || null,
+    currency: primaryRealAccount?.currency || null,
     last_success_at: now,
-    updated_at: now,
-    deriv_loginid: ids[0] || null
+    last_verified_at: now,
+    last_error: null,
+    updated_at: now
   }, { onConflict: "user_id" });
 
   await admin.schema("private").from("deriv_oauth_pending_states").delete().eq("state", state);
