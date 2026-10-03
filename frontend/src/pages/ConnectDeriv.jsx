@@ -179,11 +179,18 @@ export default function ConnectDeriv() {
           </div>
         </div>
 
-        <button className="primary" onClick={connect} disabled={status === "STARTING OAUTH"}>
-          {status === "STARTING OAUTH" ? "CONNECTING…" : "CONNECT / REFRESH DERIV"}
-        </button>
-        <button className="secondary-btn" onClick={verifyRealSession} disabled={sessionStatus === "ISSUING SESSION" || sessionStatus === "CONNECTING"}>
+        <div className="success-box" style={{ marginTop: 16 }}>
+          <b>REAL TRADING CHANNEL</b>
+          <p style={{ margin: "6px 0 0" }}>
+            Current status: <b>{sessionStatus}</b>. Use the button below to verify the authenticated
+            real Deriv WebSocket. This check does not place a trade or use real funds.
+          </p>
+        </div>
+        <button className="primary" onClick={verifyRealSession} disabled={sessionStatus === "ISSUING SESSION" || sessionStatus === "CONNECTING"}>
           {sessionStatus === "ISSUING SESSION" || sessionStatus === "CONNECTING" ? "VERIFYING REAL CHANNEL…" : "VERIFY REAL TRADING CHANNEL"}
+        </button>
+        <button className="secondary-btn" onClick={connect} disabled={status === "STARTING OAUTH"}>
+          {status === "STARTING OAUTH" ? "CONNECTING…" : "CONNECT / REFRESH DERIV"}
         </button>
         <button className="secondary-btn" onClick={() => navigate("/")}>
           BACK TO COMMAND CENTER
