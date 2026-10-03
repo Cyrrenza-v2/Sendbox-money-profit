@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "../supabaseClient";
 
 
 const DERIV_PUBLIC_ENDPOINTS = ["wss:" + "//api.derivws.com/trading/v1/options/ws/public", "wss:" + "//ws.binaryws.com/websockets/v3"];
@@ -148,6 +149,28 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             setDiscoveryComplete(true);
             setConnected(true);
             setError(unique.length ? "" : "Deriv connected, but returned an empty active-symbol list.");
+
+            // Persist the complete Deriv catalog in Supabase so the app's
+            // database-backed market inventory matches the provider response.
+            if (unique.length) {
+              const syncedAt = new Date().toISOString();
+              const rows = unique.map(item => ({
+                source: "deriv",
+                symbol: item.symbol,
+                display_name: item.name,
+                market: item.market,
+                submarket: item.subgroup || "",
+                is_active: true,
+                raw: item,
+                updated_at: syncedAt
+              }));
+              const { error: syncError } = await supabase
+                .from("market_symbols")
+                .upsert(rows, { onConflict: "symbol" });
+              if (syncError) {
+                console.warn("Supabase market catalog sync failed:", syncError.message);
+              }
+            }
 
             // Queue a modest number of tick subscriptions to avoid flooding the public socket.
             tickTimers.forEach(clearTimeout);
