@@ -88,12 +88,15 @@ export default function Wallet() {
       }
       if (!destination.trim()) throw new Error("AUTHORIZED_DESTINATION_REQUIRED");
 
-      const { error } = await supabase.rpc("request_profit_withdrawal", {
-        p_wallet_id: wallet.id,
-        p_amount: amount,
-        p_destination: destination.trim()
+      const { data, error } = await supabase.functions.invoke("profit-withdrawal-request", {
+        body: {
+          wallet_id: wallet.id,
+          amount,
+          destination: destination.trim()
+        }
       });
       if (error) throw error;
+      if (!data?.ok) throw new Error(data?.error || "WITHDRAWAL_REQUEST_FAILED");
 
       setWithdrawAmount("");
       setDestination("");
