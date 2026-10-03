@@ -132,6 +132,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             symbolsLoaded = true;
             clearConnectionTimeout();
             setMarkets(unique);
+            setFocusedSymbol(current => current || unique[0]?.symbol || "");
             setLoading(false);
             setDiscoveryComplete(true);
             setConnected(true);
