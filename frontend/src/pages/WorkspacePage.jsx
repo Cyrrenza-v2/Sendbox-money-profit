@@ -21,7 +21,7 @@ export default function WorkspacePage({title,section}){
  const config=configBySection[section]||{intro:"Live account information from Supabase.",source:"Supabase"};
  useEffect(()=>{if(section==="markets"){setState({loading:false,error:"",data:null});return;}let alive=true;async function load(){setState({loading:true,error:"",data:null});try{
  let data=null,error=null;
- if(section==="positions"){const r=await supabase.from("sandbox_positions").select("*").order("updated_at",{ascending:false}).limit(50);data=r.data;error=r.error;}
+ if(section==="positions"){const r=await supabase.from("sandbox_positions").select("id,sandbox_account_id,symbol,side,quantity,entry_price,current_price,unrealized_pnl,stop_loss,take_profit,opened_at,updated_at").eq("user_id",user.id).order("updated_at",{ascending:false}).limit(50);data=r.data;error=r.error;}
  else {
   const {data:{user}}=await supabase.auth.getUser();if(!user)throw new Error("Your session has expired. Sign in again.");
   if(section==="mt5"){const r=await supabase.from("mt5_connections").select("status,server,last_heartbeat_at,environment").eq("user_id",user.id).maybeSingle();data=r.data;error=r.error;}
@@ -44,7 +44,8 @@ export default function WorkspacePage({title,section}){
     supabase.from("system_alerts").select("severity,title,message,is_resolved,created_at").eq("is_resolved",false).order("created_at",{ascending:false}).limit(20)
   ]);const errors=[health,controls,limits,alerts].filter(x=>x.error);if(errors.length)throw errors[0].error;data={health:health.data||[],emergencyControls:controls.data||[],riskLimits:limits.data||[],activeAlerts:alerts.data||[]};}
   else if(section==="alerts"){const r=await supabase.from("audit_logs").select("id,action,created_at,status,details").order("created_at",{ascending:false}).limit(20);data=r.data;error=r.error;}
-  else if(section==="orders"||section==="history"||section==="analytics"){data=null;}
+  else if(section==="orders"||section==="history"){const statusFilter=section==="history"?"closed":null;let q=supabase.from("sandbox_orders").select("id,sandbox_account_id,symbol,side,quantity,price,status,stop_loss,take_profit,exit_price,realized_pnl,created_at,closed_at").eq("user_id",user.id).order("created_at",{ascending:false}).limit(50);if(statusFilter)q=q.eq("status",statusFilter);const r=await q;data=r.data;error=r.error;}
+  else if(section==="analytics"){data=null;}
  }
  if(error)throw error;if(alive)setState({loading:false,error:"",data});
  }catch(e){if(alive)setState({loading:false,error:e?.message||"Unable to load backend data.",data:null});}}
