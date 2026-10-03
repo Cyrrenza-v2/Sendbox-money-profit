@@ -95,7 +95,9 @@ export default function TradingTerminal() {
     if(!tick)return setError("E2E test requires a verified live Deriv tick.");
     if(!account)return setError("E2E test requires an authenticated sandbox account.");
     setE2eBusy(true);
+    const startedAt=new Date().toISOString();
     try{
+      if(!candles.length)throw new Error("Historical candles are not available yet.");
       const review=await runAI();
       if(!review)throw new Error("AI review did not complete.");
       const testKey=crypto.randomUUID();
@@ -108,7 +110,7 @@ export default function TradingTerminal() {
       await sandboxEngine.closePosition({position_id:candidate.id,exit_price:tick.price,idempotency_key:crypto.randomUUID()});
       const [finalSnap,aiAudit]=await Promise.all([
         sandboxEngine.snapshot(),
-        supabase.from("ai_analysis").select("id,analysis_type,model,created_at").eq("analysis_type","trading_advisor_chat").order("created_at",{ascending:false}).limit(1)
+        supabase.from("ai_analysis").select("id,analysis_type,model,created_at").eq("analysis_type","trading_advisor_chat").gte("created_at",startedAt).order("created_at",{ascending:false}).limit(1)
       ]);
       const closed=(finalSnap.data?.orders||[]).find(o=>o.id===(open?.order?.id||open?.data?.order?.id)|| (o.symbol===symbol&&o.closed_at));
       if(!closed||!closed.closed_at)throw new Error("Sandbox close/history verification failed.");
