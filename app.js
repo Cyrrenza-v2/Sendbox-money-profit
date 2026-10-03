@@ -110,7 +110,7 @@ async function bootstrap() {
   const uid = state.user.id;
 
   const results = await Promise.all([
-    db.from("sandbox_accounts").select("id,currency,initial_capital,available_capital,allocated_capital,withdrawable,status,created_at,updated_at").eq("user_id",uid).maybeSingle(),
+    db.from("sandbox_accounts").select("id,currency,initial_capital,available_capital,allocated_capital,withdrawable,status,created_at").eq("user_id",uid).maybeSingle(),
     db.from("sandbox_balances").select("id,sandbox_account_id,currency,cash,equity,updated_at").eq("user_id",uid).maybeSingle(),
     db.from("market_symbols").select("id,source,symbol,display_name,market,is_active,updated_at").eq("is_active",true).order("symbol").limit(40),
     db.from("service_health").select("service,status,latency_ms,last_success_at,last_failure_at,last_heartbeat_at,version,updated_at").order("service"),
