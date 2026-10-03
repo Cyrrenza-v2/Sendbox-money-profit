@@ -2,6 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import LiveMarketPanel from "../components/LiveMarketPanel";
 import { sandboxEngine } from "../services/sandboxEngine";
+import { supabase } from "../supabaseClient";
+
+const tradingService = "trading-service";
+async function invokeTradingService(body) {
+  const { data, error } = await supabase.functions.invoke(tradingService, { body });
+  if (error) throw new Error(data?.error || error.message || "LIVE_BROKER_REQUEST_FAILED");
+  if (!data?.ok) throw new Error(data?.error || "LIVE_BROKER_REQUEST_FAILED");
+  return data.data;
+}
 
 const fmt = (n, digits = 5) => Number.isFinite(Number(n)) ? Number(n).toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: Math.min(2, digits) }) : "—";
 const TIMEFRAMES = [{label:"1m", value:"M1", seconds:60},{label:"5m", value:"M5", seconds:300},{label:"15m", value:"M15", seconds:900},{label:"1h", value:"H1", seconds:3600},{label:"4h", value:"H4", seconds:14400},{label:"1d", value:"D1", seconds:86400}];
@@ -34,11 +43,14 @@ export default function TradingTerminal() {
   const [account,setAccount]=useState(null),[positions,setPositions]=useState([]),[orders,setOrders]=useState([]);
   const [quantity,setQuantity]=useState("0.01"),[stopLoss,setStopLoss]=useState(""),[takeProfit,setTakeProfit]=useState("");
   const [e2eBusy,setE2eBusy]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[activeTab,setActiveTab]=useState("positions");
+  const [executionMode,setExecutionMode]=useState("SANDBOX"),[liveAccount,setLiveAccount]=useState(null),[livePortfolio,setLivePortfolio]=useState([]),[selectedLiveContract,setSelectedLiveContract]=useState(null),[liveStake,setLiveStake]=useState("10"),[liveGrowth,setLiveGrowth]=useState("1");
   const lastMarkRef=useRef(0),priceRef=useRef(null);
   useEffect(()=>{const requested=searchParams.get("symbol");if(requested)setSymbol(requested);},[searchParams]);
 
   const refresh=async()=>{const r=await sandboxEngine.snapshot();const data=r.data||{};setAccount(data.accounts?.[0]||data.account||null);setPositions(data.positions||[]);setOrders(data.orders||[]);};
+  const refreshLive=async()=>{const data=await invokeTradingService({operation:"real_snapshot"});setLiveAccount(data?.balance||null);setLivePortfolio(data?.portfolio?.contracts||[]);return data;};
   useEffect(()=>{let alive=true;refresh().catch(e=>{if(alive)setError(e.message||"Sandbox account could not be loaded.");});const timer=setInterval(()=>refresh().catch(()=>{}),5000);return()=>{alive=false;clearInterval(timer);};},[]);
+  useEffect(()=>{if(executionMode!=="LIVE")return;let alive=true;refreshLive().catch(e=>{if(alive)setError(e.message||"Live broker account could not be loaded.");});const timer=setInterval(()=>refreshLive().catch(()=>{}),10000);return()=>{alive=false;clearInterval(timer);};},[executionMode]);
 
   // Load real historical OHLC candles from Deriv. The separate socket keeps the
   // chart history independent from the market-watch socket and never authorizes trades.
@@ -100,6 +112,36 @@ export default function TradingTerminal() {
     finally{setE2eBusy(false);}
   };
 
+  const executeLive=async side=>{
+    setError("");setNotice("");
+    if(busy)return;
+    if(!tick)return setError("Waiting for a verified live price.");
+    const stake=Number(liveStake),growth=Number(liveGrowth);
+    if(!(stake>0)||!(growth>0))return setError("Enter valid live stake and growth values.");
+    setBusy(true);
+    try{
+      if(side==="BUY"){
+        const proposalData=await invokeTradingService({operation:"accu_proposal",contract_template:{amount:stake,basis:"stake",contract_type:"ACCU",currency:String(liveAccount?.currency||"USD"),growth_rate:growth,underlying_symbol:symbol,duration:5,duration_unit:"m"}});
+        const proposal=proposalData?.proposal||proposalData;
+        const proposalId=String(proposal?.id||"");
+        const maxPrice=Number(proposal?.ask_price??proposal?.display_value??proposal?.price);
+        if(!proposalId||!(maxPrice>0))throw new Error("LIVE_BROKER_PROPOSAL_INVALID");
+        if(!window.confirm(`CONFIRM LIVE BROKER BUY\\n${symbolName} (${symbol}) · ${stake} ${liveAccount?.currency||"USD"} · growth ${growth}%\\nThe protected trading service will submit this order only if its server-side safety controls are enabled.`))return;
+        const result=await invokeTradingService({operation:"buy",proposal_id:proposalId,price:maxPrice,stake,symbol,client_order_id:crypto.randomUUID()});
+        setNotice(`LIVE BROKER BUY CONFIRMED · contract ${result?.buy?.contract_id||result?.order?.deriv_contract_id||"created"}`);
+      }else{
+        if(!selectedLiveContract)return setError("Select an open live contract before selling.");
+        const contractId=String(selectedLiveContract.contract_id||selectedLiveContract.id||"");
+        if(!contractId)return setError("LIVE_CONTRACT_ID_REQUIRED");
+        if(!window.confirm(`CONFIRM LIVE BROKER SELL\\nContract ${contractId} on ${symbolName}.\\nThe protected trading service will submit the close only if its server-side safety controls are enabled.`))return;
+        const result=await invokeTradingService({operation:"sell",contract_id:contractId,price:0});
+        setSelectedLiveContract(null);setNotice(`LIVE BROKER SELL CONFIRMED · ${result?.sell?.contract_id||contractId}`);
+      }
+      await refreshLive();
+    }catch(e){setError(e.message||"LIVE_BROKER_ORDER_FAILED");}
+    finally{setBusy(false);}
+  };
+
   const execute=async side=>{
     setError("");setNotice("");
     const size=Number(quantity),sl=stopLoss.trim()===""?null:Number(stopLoss),tp=takeProfit.trim()===""?null:Number(takeProfit);
@@ -126,7 +168,7 @@ export default function TradingTerminal() {
   };
 
   return <div className="vt-page">
-    <header className="vt-heading"><div><span className="eyebrow">VELTRION / TRADING WORKSPACE</span><h1>{symbolName} <span className="vt-symbol-code">{symbol}</span></h1><p>Market Watch · candlestick chart · order ticket · open positions. Real-money execution is not available in this terminal.</p></div><div className="vt-header-actions"><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}><i/> {feed==="LIVE"?"LIVE MARKET DATA":feed}</span><span className="vt-mode-chip">SANDBOX ONLY</span><button className="vt-ai-button" onClick={()=>navigate(`/real-trading?symbol=${encodeURIComponent(symbol)}`)}>REAL TERMINAL</button></div></header>
+    <header className="vt-heading"><div><span className="eyebrow">VELTRION / TRADING WORKSPACE</span><h1>{symbolName} <span className="vt-symbol-code">{symbol}</span></h1><p>Market Watch · candlestick chart · order ticket · open positions. Real-money execution is not available in this terminal.</p></div><div className="vt-header-actions"><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}><i/> {feed==="LIVE"?"LIVE MARKET DATA":feed}</span><span className="vt-mode-chip">{executionMode==="LIVE"?"LIVE BROKER":"SANDBOX"}</span><button className="vt-ai-button" onClick={()=>setExecutionMode(m=>m==="SANDBOX"?"LIVE":"SANDBOX")}>{executionMode==="SANDBOX"?"ENABLE LIVE BROKER":"USE SANDBOX"}</button><button className="vt-ai-button" onClick={()=>navigate(`/real-trading?symbol=${encodeURIComponent(symbol)}`)}>REAL TERMINAL</button></div></header>
     <div className="vt-metrics"><div className="vt-metric"><span>Available sandbox balance</span><strong>{account?.currency||"USD"} {fmt(account?.available_capital,2)}</strong><small>Virtual account funds</small></div><div className="vt-metric"><span>Bid / observed price</span><strong>{tick?fmt(tick.price,8):"—"}</strong><small>{symbolName} · public feed</small></div><div className="vt-metric"><span>Open positions</span><strong>{positions.length}</strong><small>Sandbox records</small></div><div className="vt-metric"><span>Floating P/L</span><strong className={openPnl>=0?"vt-positive":"vt-negative"}>{account?.currency||"USD"} {fmt(openPnl,2)}</strong><small>Reported by sandbox service</small></div></div>
     <LiveMarketPanel compact selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={onPrice}/>
     <section className="vt-panel vt-chart-panel"><div className="vt-panel-head"><div><h2>Price Chart <span className="vt-symbol-code">{symbol}</span></h2><p>{candles.length} candles · Deriv historical OHLC + live tick updates</p></div><div className="vt-timeframes">{TIMEFRAMES.map(t=><button key={t.value} className={timeframe===t.value?"active":""} onClick={()=>setTimeframe(t.value)}>{t.label}</button>)}</div></div><CandleChart candles={candles} symbol={symbolName} price={tick?.price}/><div className="vt-chart-footer"><span><i className="vt-legend-candle up"/> Bullish <i className="vt-legend-candle down"/> Bearish</span><span>Historical data is loaded from Deriv when available; the latest candle updates from the public tick stream.</span></div></section>
@@ -144,6 +186,7 @@ export default function TradingTerminal() {
     <section className="vt-panel"><div className="vt-section-title"><div><h2>Trading Activity</h2><p>Positions and orders recorded by the sandbox service</p></div><div className="vt-activity-tabs"><button className={activeTab==="positions"?"active":""} onClick={()=>setActiveTab("positions")}>Positions ({positions.length})</button><button className={activeTab==="orders"?"active":""} onClick={()=>setActiveTab("orders")}>Orders ({orders.length})</button></div></div>
       {activeTab==="positions"?(positions.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Market</th><th>Side</th><th>Size</th><th>Entry</th><th>Current</th><th>Stop loss</th><th>Take profit</th><th>Floating P/L</th><th>Action</th></tr></thead><tbody>{positions.map(p=><tr key={p.id}><td>{p.symbol}</td><td className={String(p.side).toUpperCase()==="BUY"?"vt-positive":"vt-negative"}>{p.side}</td><td>{p.quantity}</td><td>{fmt(Number(p.entry_price),8)}</td><td>{fmt(Number(p.current_price),8)}</td><td>{fmt(Number(p.stop_loss),8)}</td><td>{fmt(Number(p.take_profit),8)}</td><td className={Number(p.unrealized_pnl)>=0?"vt-positive":"vt-negative"}>{fmt(Number(p.unrealized_pnl),2)}</td><td><button className="vt-close" disabled={busy||!tick} onClick={()=>close(p)}>Close</button></td></tr>)}</tbody></table></div>:<div className="vt-empty">No open sandbox positions. Confirm a Buy or Sell sandbox order to see it here.</div>):(orders.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Time</th><th>Market</th><th>Side</th><th>Size</th><th>Price</th><th>Status</th><th>Realized P/L</th></tr></thead><tbody>{orders.map(o=><tr key={o.id}><td>{o.created_at?new Date(o.created_at).toLocaleString():"—"}</td><td>{o.symbol}</td><td>{o.side}</td><td>{o.quantity}</td><td>{fmt(Number(o.price),8)}</td><td>{o.status||"—"}</td><td>{o.realized_pnl==null?"—":fmt(Number(o.realized_pnl),2)}</td></tr>)}</tbody></table></div>:<div className="vt-empty">No sandbox order records were returned.</div>)}
     </section>
+    {executionMode==="LIVE"&&<section className="vt-panel"><div className="vt-section-title"><div><h2>Live Broker Parameters</h2><p>Server-gated Deriv ACCU execution parameters</p></div><span className="vt-ai-tag">PROTECTED</span></div><div className="vt-risk-fields"><label className="vt-label">Live stake<input type="number" min="0.01" step="0.01" value={liveStake} onChange={e=>setLiveStake(e.target.value)}/></label><label className="vt-label">Growth %<input type="number" min="0.01" step="0.01" value={liveGrowth} onChange={e=>setLiveGrowth(e.target.value)}/></label></div><div className="vt-disclaimer">Live orders require an authenticated broker account and all server-side safety controls to be enabled. The browser never receives the broker access token.</div></section>}
     {notice&&<div className="vt-success" role="status">{notice}</div>}{error&&<div className="vt-error" role="alert">{error}</div>}
   </div>;
 }
