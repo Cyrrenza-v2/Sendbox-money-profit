@@ -1,0 +1,213 @@
+import { createClient } from "npm:@supabase/supabase-js@2";
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const DERIV_API = "https://api.derivws.com";
+
+const db = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization,apikey,content-type",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
+};
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
+
+async function getUser(req: Request) {
+  const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!token) return null;
+  const client = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY") || "", {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false }
+  });
+  const { data } = await client.auth.getUser();
+  return data.user || null;
+}
+
+async function realContext(userId: string) {
+  const [{ data: account, error: accountError }, { data: cred, error: credError }] = await Promise.all([
+    db.from("real_trading_accounts")
+      .select("id,deriv_account_id,currency,balance,equity,is_active,emergency_stopped")
+      .eq("user_id", userId)
+      .maybeSingle(),
+    db.schema("private").from("deriv_oauth_credentials")
+      .select("access_token,expires_at")
+      .eq("user_id", userId)
+      .maybeSingle()
+  ]);
+  if (accountError) throw accountError;
+  if (credError) throw credError;
+  if (!account?.deriv_account_id) throw new Error("REAL_DERIV_ACCOUNT_NOT_PROVISIONED");
+  if (!cred?.access_token) throw new Error("DERIV_REAUTH_REQUIRED");
+  if (cred.expires_at && Date.parse(cred.expires_at) <= Date.now())
+    throw new Error("DERIV_ACCESS_TOKEN_EXPIRED");
+  return { account, accessToken: cred.access_token };
+}
+
+async function otpUrl(accountId: string, accessToken: string) {
+  const r = await fetch(
+    `${DERIV_API}/trading/v1/options/accounts/${encodeURIComponent(accountId)}/otp`,
+    { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok || !body?.data?.url) throw new Error(body?.errors?.[0]?.message || "DERIV_OTP_FAILED");
+  const url = String(body.data.url);
+  if (!url.includes("/trading/v1/options/ws/real")) throw new Error("DERIV_REAL_WS_NOT_RETURNED");
+  return url;
+}
+
+function wsCall(url: string, payload: Record<string, unknown>, expected: string, timeoutMs = 15000) {
+  return new Promise<any>((resolve, reject) => {
+    const ws = new WebSocket(url);
+    const reqId = Number(payload.req_id || Date.now());
+    const timer = setTimeout(() => {
+      try { ws.close(); } catch {}
+      reject(new Error("DERIV_REQUEST_TIMEOUT"));
+    }, timeoutMs);
+
+    const finish = (fn: (value: any) => void, value: any) => {
+      clearTimeout(timer);
+      try { ws.close(); } catch {}
+      fn(value);
+    };
+
+    ws.addEventListener("open", () => ws.send(JSON.stringify({ ...payload, req_id: reqId })));
+    ws.addEventListener("message", event => {
+      let data: any;
+      try { data = JSON.parse(String(event.data)); } catch { return; }
+      if (data.error) {
+        finish(reject, new Error(data.error.message || "DERIV_API_ERROR"));
+        return;
+      }
+      if (data.msg_type === expected && (!data.req_id || data.req_id === reqId))
+        finish(resolve, data);
+    });
+    ws.addEventListener("error", () => finish(reject, new Error("DERIV_WEBSOCKET_ERROR")));
+  });
+}
+
+async function realWsCall(userId: string, payload: Record<string, unknown>, expected: string) {
+  const { account, accessToken } = await realContext(userId);
+  const url = await otpUrl(String(account.deriv_account_id), accessToken);
+  return wsCall(url, payload, expected);
+}
+
+async function tradingGate(userId: string) {
+  const [{ data: settings }, { data: account }, { data: kill }] = await Promise.all([
+    db.from("production_freeze").select("real_trading_enabled").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+    db.from("real_trading_accounts").select("is_active,emergency_stopped").eq("user_id", userId).maybeSingle(),
+    db.from("kill_switches").select("enabled").eq("scope", "deriv").maybeSingle()
+  ]);
+
+  if (settings?.real_trading_enabled !== true) throw new Error("REAL_TRADING_DISABLED");
+  if (!account?.is_active) throw new Error("REAL_ACCOUNT_INACTIVE");
+  if (account?.emergency_stopped) throw new Error("REAL_ACCOUNT_EMERGENCY_STOPPED");
+  if (kill?.enabled) throw new Error("DERIV_TRADING_KILL_SWITCH");
+}
+
+function validateAccuTemplate(t: any) {
+  if (!t || t.contract_type !== "ACCU") throw new Error("ACCU_CONTRACT_REQUIRED");
+  if (!/^\w{2,30}$/.test(String(t.underlying_symbol || ""))) throw new Error("INVALID_UNDERLYING_SYMBOL");
+  if (!/^[a-zA-Z0-9]{2,20}$/.test(String(t.currency || ""))) throw new Error("INVALID_CURRENCY");
+  if (!Number.isFinite(Number(t.amount)) || Number(t.amount) <= 0) throw new Error("INVALID_STAKE");
+  if (!Number.isFinite(Number(t.growth_rate)) || Number(t.growth_rate) <= 0) throw new Error("INVALID_GROWTH_RATE");
+  if (t.duration != null && (!Number.isInteger(Number(t.duration)) || Number(t.duration) < 0)) throw new Error("INVALID_DURATION");
+  if (t.limit_order) {
+    for (const k of ["stop_loss", "take_profit"]) {
+      if (t.limit_order[k] != null && (!Number.isFinite(Number(t.limit_order[k])) || Number(t.limit_order[k]) < 0))
+        throw new Error(`INVALID_${k.toUpperCase()}`);
+    }
+  }
+  return {
+    amount: Number(t.amount),
+    basis: t.basis || "stake",
+    contract_type: "ACCU",
+    currency: String(t.currency).toUpperCase(),
+    ...(t.duration == null ? {} : { duration: Number(t.duration) }),
+    ...(t.duration_unit ? { duration_unit: t.duration_unit } : {}),
+    growth_rate: Number(t.growth_rate),
+    ...(t.limit_order ? { limit_order: t.limit_order } : {}),
+    underlying_symbol: String(t.underlying_symbol)
+  };
+}
+
+async function handle(userId: string, body: any) {
+  const op = String(body.operation || body.action || "status");
+
+  if (op === "accu_proposal") {
+    const template = validateAccuTemplate(body.contract_template);
+    const contracts = await realWsCall(userId, { contracts_for: template.underlying_symbol }, "contracts_for");
+    const available = Array.isArray(contracts?.contracts_for?.available) ? contracts.contracts_for.available : [];
+    if (!available.some((x: any) => x.contract_type === "ACCU"))
+      throw new Error("ACCU_NOT_AVAILABLE_FOR_SYMBOL");
+    return realWsCall(userId, { proposal: 1, ...template }, "proposal");
+  }
+
+  if (op === "real_snapshot") {
+    const [balance, portfolio, profit, statement] = await Promise.all([
+      realWsCall(userId, { balance: 1 }, "balance"),
+      realWsCall(userId, { portfolio: 1 }, "portfolio"),
+      realWsCall(userId, { profit_table: 1, limit: 50, sort: "DESC" }, "profit_table"),
+      realWsCall(userId, { statement: 1, limit: 100 }, "statement")
+    ]);
+    return {
+      balance: balance.balance,
+      portfolio: portfolio.portfolio,
+      profit_table: profit.profit_table,
+      statement: statement.statement
+    };
+  }
+
+  if (op === "contract_status") {
+    if (!body.contract_id) throw new Error("CONTRACT_ID_REQUIRED");
+    return realWsCall(userId, {
+      proposal_open_contract: 1,
+      contract_id: Number(body.contract_id),
+      subscribe: body.subscribe === 1 ? 1 : undefined
+    }, "proposal_open_contract");
+  }
+
+  if (op === "buy") {
+    await tradingGate(userId);
+    if (!body.proposal_id) throw new Error("PROPOSAL_ID_REQUIRED");
+    if (!Number.isFinite(Number(body.price)) || Number(body.price) <= 0) throw new Error("INVALID_MAX_PRICE");
+    return realWsCall(userId, { buy: String(body.proposal_id), price: Number(body.price) }, "buy");
+  }
+
+  if (op === "auto_start") {
+    await tradingGate(userId);
+    const template = validateAccuTemplate(body.contract_template);
+    const strategyId = String(body.strategy_id || "");
+    if (!/^\w{1,64}$/.test(strategyId)) throw new Error("INVALID_STRATEGY_ID");
+    if (!body.strategy_parameters || typeof body.strategy_parameters !== "object")
+      throw new Error("STRATEGY_PARAMETERS_REQUIRED");
+    return realWsCall(userId, {
+      auto_start: 1,
+      contract_template: template,
+      strategy_id: strategyId,
+      strategy_parameters: body.strategy_parameters,
+      subscribe: body.subscribe === 1 ? 1 : undefined
+    }, "auto_start");
+  }
+
+  throw new Error("UNSUPPORTED_REAL_TRADING_OPERATION");
+}
+
+Deno.serve(async req => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  const user = await getUser(req);
+  if (!user) return json({ ok: false, error: "Authentication required" }, 401);
+
+  try {
+    const body = req.method === "GET" ? {} : await req.json().catch(() => ({}));
+    const result = await handle(user.id, body);
+    return json({ ok: true, data: result });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "REAL_TRADING_REQUEST_FAILED";
+    const status = message === "REAL_TRADING_DISABLED" || message === "REAL_ACCOUNT_INACTIVE" ||
+      message === "REAL_ACCOUNT_EMERGENCY_STOPPED" || message === "DERIV_TRADING_KILL_SWITCH" ? 423 : 400;
+    return json({ ok: false, error: message }, status);
+  }
+});
