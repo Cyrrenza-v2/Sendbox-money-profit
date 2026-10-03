@@ -1,5 +1,6 @@
 name: Deploy VELTRION to GitHub Pages
 # Deployment trigger for the current main branch build.
+# Manual redeploy checkpoint: 2026-10-03.
 
 on:
   push:
