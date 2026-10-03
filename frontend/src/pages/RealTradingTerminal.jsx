@@ -16,7 +16,7 @@ export default function RealTradingTerminal() {
   const [message, setMessage] = useState("");
   const [connection, setConnection] = useState(null);
   const [sandboxAccount, setSandboxAccount] = useState(null);
-  const [marketPrice, setMarketPrice] = useState(null);
+  const [marketPrice, setMarketPrice] = useState(null);\n  const [submitting, setSubmitting] = useState(false);
   const markInFlightRef = useRef(false);
   const lastMarkAtRef = useRef(0);
   const contractLabel = side => String(side || "").toUpperCase() === "SELL" ? "PUT" : "CALL";
@@ -176,7 +176,7 @@ export default function RealTradingTerminal() {
       <h2>Confirm trading request</h2>
       <p>This order will use VELTRION internal sandbox funds and the current live Deriv market price. It will not place a real-money Deriv contract.</p>
       <div className="confirm-data"><b>{contractLabel(pendingSide)} ({String(pendingSide || "").toUpperCase()})</b><span>{symbol}</span><span>${Number(stake || 0).toFixed(2)} USD stake</span></div>
-      <div className="confirm-actions"><button className="button" onClick={() => setConfirmOpen(false)}>CANCEL</button><button className="button danger" onClick={submitOrder}>CONFIRM REQUEST</button></div>
+      <div className="confirm-actions"><button className="button" onClick={() => setConfirmOpen(false)}>CANCEL</button><button className="button danger" disabled={submitting} onClick={submitOrder}>{submitting ? "EXECUTING…" : "CONFIRM REQUEST"}</button></div>
     </div></div>}
   </div>;
 }
