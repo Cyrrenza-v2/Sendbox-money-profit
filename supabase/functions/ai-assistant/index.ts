@@ -40,7 +40,7 @@ function userIdFromJwt(req: Request): string | null {
   }
 }
 
-async function writeAudit(req: Request, model: string, mode: string, message: string, answer: string) {
+async function writeAudit(req: Request, model: string, mode: string, message: string, answer: string): Promise<string | null> {
   const userId = userIdFromJwt(req);
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
