@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 
 const DERIV_PUBLIC_ENDPOINTS = ["wss:" + "//api.derivws.com/trading/v1/options/ws/public", "wss:" + "//ws.binaryws.com/websockets/v3"];
@@ -12,6 +12,8 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [marketFilter, setMarketFilter] = useState("ALL");
+  const selectedSymbolRef = useRef(selectedSymbol);
+  const socketRef = useRef(null);
 
   useEffect(() => {
     let disposed = false;
@@ -70,7 +72,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         if (disposed) return;
         setConnected(true);
         setError("");
-        socket.send(JSON.stringify({ active_symbols: "brief", req_id: 1 }));
+        socket.send(JSON.stringify({ active_symbols: "brief", req_id: 1 }));\n        if (selectedSymbolRef.current) {\n          socket.send(JSON.stringify({ ticks: selectedSymbolRef.current, subscribe: 1, req_id: 9000 }));\n        }
       };
 
       socket.onmessage = event => {
@@ -119,7 +121,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             // Queue a modest number of tick subscriptions to avoid flooding the public socket.
             tickTimers.forEach(clearTimeout);
             tickTimers = [];
-            unique.slice(0, 80).forEach((item, index) => {
+            if (selectedSymbolRef.current && !unique.some(item => item.symbol === selectedSymbolRef.current)) {\n              socket.send(JSON.stringify({ ticks: selectedSymbolRef.current, subscribe: 1, req_id: 9000 }));\n            }\n            unique.slice(0, 80).forEach((item, index) => {
               tickTimers.push(setTimeout(() => {
                 if (!disposed && socket?.readyState === WebSocket.OPEN) {
                   socket.send(JSON.stringify({ ticks: item.symbol, subscribe: 1, req_id: 1000 + index }));
@@ -136,7 +138,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             const quote = Number(tick.quote);
             const nextTick = { quote, epoch: Number(tick.epoch), pipSize: tick.pip_size };
             setTicks(prev => ({ ...prev, [symbol]: nextTick }));
-            if (symbol === selectedSymbol) onPriceChange?.(nextTick);
+            if (symbol === selectedSymbolRef.current) onPriceChange?.(nextTick);
           }
         } catch {
           setError("Deriv returned a response that could not be read.");
