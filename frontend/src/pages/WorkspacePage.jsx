@@ -21,9 +21,9 @@ export default function WorkspacePage({title,section}){
  const config=configBySection[section]||{intro:"Live account information from Supabase.",source:"Supabase"};
  useEffect(()=>{if(section==="markets"){setState({loading:false,error:"",data:null});return;}let alive=true;async function load(){setState({loading:true,error:"",data:null});try{
  let data=null,error=null;
+  const {data:{user}}=await supabase.auth.getUser();if(!user)throw new Error("Your session has expired. Sign in again.");
  if(section==="positions"){const r=await supabase.from("sandbox_positions").select("id,sandbox_account_id,symbol,side,quantity,entry_price,current_price,unrealized_pnl,stop_loss,take_profit,opened_at,updated_at").eq("user_id",user.id).order("updated_at",{ascending:false}).limit(50);data=r.data;error=r.error;}
  else {
-  const {data:{user}}=await supabase.auth.getUser();if(!user)throw new Error("Your session has expired. Sign in again.");
   if(section==="mt5"){const r=await supabase.from("mt5_connections").select("status,server,last_heartbeat_at,environment").eq("user_id",user.id).maybeSingle();data=r.data;error=r.error;}
   else if(section==="sandbox"){const r=await supabase.from("sandbox_accounts").select("id,currency,initial_capital,available_capital,allocated_capital,withdrawable,status,created_at").eq("user_id",user.id).maybeSingle();data=r.data;error=r.error;}
   else if(section==="settings"){const r=await supabase.from("app_settings").select("environment,trading_mode,real_trading_enabled,updated_at").order("updated_at",{ascending:false}).limit(1).maybeSingle();data=r.data;error=r.error;}
