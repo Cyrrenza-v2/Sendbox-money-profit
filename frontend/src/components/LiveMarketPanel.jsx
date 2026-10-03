@@ -16,8 +16,9 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
   const selectedSymbolRef = useRef(selectedSymbol);
   const socketRef = useRef(null);
   const onPriceChangeRef = useRef(onPriceChange);
+  const subscribeSymbolRef = useRef(null);
   useEffect(() => { if (selectedSymbol) setFocusedSymbol(selectedSymbol); }, [selectedSymbol]);
-  useEffect(() => { if (socketRef.current?.readyState === WebSocket.OPEN && focusedSymbol) socketRef.current.send(JSON.stringify({ ticks: focusedSymbol, subscribe: 1, req_id: 9100 })); }, [focusedSymbol]);
+  useEffect(() => { subscribeSymbolRef.current?.(focusedSymbol); }, [focusedSymbol]);
 
   useEffect(() => {
     onPriceChangeRef.current = onPriceChange;
@@ -25,9 +26,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
 
   useEffect(() => {
     selectedSymbolRef.current = selectedSymbol;
-    if (socketRef.current?.readyState === WebSocket.OPEN && selectedSymbol) {
-      socketRef.current.send(JSON.stringify({ ticks: selectedSymbol, subscribe: 1, req_id: 9000 }));
-    }
+    subscribeSymbolRef.current?.(selectedSymbol);
   }, [selectedSymbol]);
 
   useEffect(() => {
@@ -47,6 +46,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       subscribedSymbols.add(symbol);
       socket.send(JSON.stringify({ ticks: symbol, subscribe: 1, req_id: 9000 + subscribedSymbols.size }));
     };
+    subscribeSymbolRef.current = subscribeSymbol;
 
     const clearConnectionTimeout = () => {
       if (connectTimeout) clearTimeout(connectTimeout);
@@ -197,6 +197,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       tickTimers.forEach(clearTimeout);
       try { socket?.close(); } catch {}
       if (socketRef.current === socket) socketRef.current = null;
+      subscribeSymbolRef.current = null;
     };
   }, []);
 
