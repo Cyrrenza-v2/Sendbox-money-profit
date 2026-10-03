@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import LiveMarketPanel from "../components/LiveMarketPanel";
