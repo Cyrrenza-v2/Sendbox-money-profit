@@ -14,6 +14,11 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
   const [marketFilter, setMarketFilter] = useState("ALL");
   const selectedSymbolRef = useRef(selectedSymbol);
   const socketRef = useRef(null);
+  const onPriceChangeRef = useRef(onPriceChange);
+
+  useEffect(() => {
+    onPriceChangeRef.current = onPriceChange;
+  }, [onPriceChange]);
 
   useEffect(() => {
     selectedSymbolRef.current = selectedSymbol;
@@ -152,7 +157,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             const quote = Number(tick.quote);
             const nextTick = { quote, epoch: Number(tick.epoch), pipSize: tick.pip_size };
             setTicks(prev => ({ ...prev, [symbol]: nextTick }));
-            if (symbol === selectedSymbolRef.current) onPriceChange?.(nextTick);
+            if (symbol === selectedSymbolRef.current) onPriceChangeRef.current?.(nextTick);
           }
         } catch {
           setError("Deriv returned a response that could not be read.");
