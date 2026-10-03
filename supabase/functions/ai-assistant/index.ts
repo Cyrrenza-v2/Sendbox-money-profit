@@ -26,6 +26,52 @@ function cleanHistory(value: unknown): ChatMessage[] {
     .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
 }
 
+function userIdFromJwt(req: Request): string | null {
+  const header = req.headers.get("authorization") || "";
+  const token = header.replace(/^Bearer\s+/i, "");
+  const part = token.split(".")[1];
+  if (!part) return null;
+  try {
+    const padded = part.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(part.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(padded));
+    return typeof payload.sub === "string" ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeAudit(req: Request, model: string, mode: string, message: string, answer: string) {
+  const userId = userIdFromJwt(req);
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  if (!userId || !serviceKey || !supabaseUrl) {
+    console.warn("AI audit skipped: required server context is unavailable.");
+    return;
+  }
+
+  const response = await fetch(`${supabaseUrl}/rest/v1/ai_analysis`, {
+    method: "POST",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+      Prefer: "return=minimal",
+    },
+    body: JSON.stringify({
+      user_id: userId,
+      request_id: crypto.randomUUID(),
+      analysis_type: "trading_advisor_chat",
+      confidence: 0,
+      output: { mode, prompt: message.slice(0, 4000), answer: answer.slice(0, 12000) },
+      model,
+    }),
+  });
+
+  if (!response.ok) {
+    console.warn("AI audit write failed", response.status, (await response.text()).slice(0, 300));
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, error: "Method not allowed." }, 405);
@@ -48,20 +94,29 @@ Deno.serve(async (req: Request) => {
       : "You are the VELTRION trading education advisor. Give risk-aware educational explanations and hypothetical strategy analysis. Do not promise returns, claim certainty, invent market data, or present advice as guaranteed financial instructions. The user may be using a sandbox trading terminal.";
 
     const model = Deno.env.get("OPENAI_MODEL") || "gpt-4.1-mini";
-    const upstream = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: "system", content: system }, ...history, { role: "user", content: message }],
-        temperature: 0.2,
-        max_tokens: 700,
-      }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
+    let upstream: Response;
+    try {
+      upstream = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "system", content: system }, ...history, { role: "user", content: message }],
+          temperature: 0.2,
+          max_tokens: 700,
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const raw = await upstream.text();
     let data: any = null;
-    try { data = JSON.parse(raw); } catch { /* preserve a safe generic error */ }
+    try { data = JSON.parse(raw); } catch {}
 
     if (!upstream.ok) {
       console.error("AI upstream error", upstream.status, data?.error?.message ?? raw.slice(0, 500));
@@ -74,9 +129,11 @@ Deno.serve(async (req: Request) => {
       return json({ ok: false, error: "The AI service returned an empty response." }, 502);
     }
 
+    await writeAudit(req, model, mode, message, answer);
     return json({ ok: true, answer, mode, model });
   } catch (error) {
+    const aborted = error instanceof DOMException && error.name === "AbortError";
     console.error("ai-assistant error", error);
-    return json({ ok: false, error: "Unable to process the AI request right now." }, 500);
+    return json({ ok: false, error: aborted ? "The AI provider timed out. Please retry." : "Unable to process the AI request right now." }, aborted ? 504 : 500);
   }
 });
