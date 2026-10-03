@@ -16,7 +16,8 @@ export default function RealTradingTerminal() {
   const [message, setMessage] = useState("");
   const [connection, setConnection] = useState(null);
   const [sandboxAccount, setSandboxAccount] = useState(null);
-  const [marketPrice, setMarketPrice] = useState(null);\n  const [submitting, setSubmitting] = useState(false);
+  const [marketPrice, setMarketPrice] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
   const markInFlightRef = useRef(false);
   const lastMarkAtRef = useRef(0);
   const contractLabel = side => String(side || "").toUpperCase() === "SELL" ? "PUT" : "CALL";
