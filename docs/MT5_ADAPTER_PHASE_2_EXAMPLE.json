@@ -1,0 +1,31 @@
+{
+  "account": {
+    "operation": "account",
+    "connection_id": "00000000-0000-4000-8000-000000000001",
+    "payload": {}
+  },
+  "sync": {
+    "operation": "sync",
+    "connection_id": "00000000-0000-4000-8000-000000000001",
+    "payload": {}
+  },
+  "place_order_demo": {
+    "operation": "place_order",
+    "connection_id": "00000000-0000-4000-8000-000000000001",
+    "request_id": "request_20261003_001",
+    "payload": {
+      "symbol": "EURUSD",
+      "side": "buy",
+      "volume": 0.01,
+      "order_type": "market",
+      "client_order_id": "veltrion_demo_001"
+    }
+  },
+  "cancel_order": {
+    "operation": "cancel_order",
+    "connection_id": "00000000-0000-4000-8000-000000000001",
+    "payload": {
+      "external_order_id": "broker-order-id"
+    }
+  }
+}
