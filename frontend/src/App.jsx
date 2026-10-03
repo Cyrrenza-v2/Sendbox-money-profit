@@ -24,7 +24,6 @@ const screens = [
  ["/app/trading/ai","AI Market Assistant","ai"],
  ["/app/deriv/account","Deriv Connection","deriv"],
  ["/app/mt5/overview","MT5 Infrastructure","mt5"],
- ["/app/sandbox/overview","Sandbox Overview","sandbox"],
  ["/app/real/account","Real Account","real"],
  ["/app/wallet/overview","Wallet","wallet"],
  ["/app/analytics/performance","Analytics","analytics"],
