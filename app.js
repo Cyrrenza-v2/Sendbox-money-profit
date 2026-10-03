@@ -14,8 +14,43 @@ const state = {
   deriv: null,
   mt5: null,
   sessions: [],
-  audit: []
+  audit: [],
+  timeframe: "1m",
+  timeframeMenuOpen: false
 };
+
+const TIMEFRAMES = [
+  ...Array.from({length:30}, (_,i) => ({id:`${i+1}m`, label:`${i+1} minute`, short:`${i+1}m`})),
+  ...Array.from({length:12}, (_,i) => ({id:`${i+1}h`, label:`${i+1} hour`, short:`${i+1}h`})),
+  {id:"1d",label:"1 day",short:"1d"},
+  {id:"1w",label:"1 week",short:"1w"},
+  {id:"1mo",label:"1 month",short:"1M"}
+];
+const QUICK_TIMEFRAMES = ["1m","5m","15m","30m","1h","4h","1d"];
+
+function timeframeById(id) {
+  return TIMEFRAMES.find(x => x.id === id) || TIMEFRAMES[0];
+}
+
+function timeframeControls() {
+  const quick = QUICK_TIMEFRAMES.map(id => {
+    const t = timeframeById(id);
+    return `<button class="timeframe-btn ${state.timeframe===id?"active":""}" data-timeframe="${t.id}">${t.short}</button>`;
+  }).join("");
+  return `
+    <div class="timeframe-wrap">
+      <div class="timeframe-row">${quick}
+        <button class="timeframe-btn more ${state.timeframe && !QUICK_TIMEFRAMES.includes(state.timeframe)?"active":""}" id="timeframeMore" aria-expanded="${state.timeframeMenuOpen}">MORE <span>⌄</span></button>
+      </div>
+      ${state.timeframeMenuOpen ? `
+        <div class="timeframe-panel">
+          <div class="label">ALL TIMEFRAMES</div>
+          <div class="timeframe-grid">
+            ${TIMEFRAMES.map(t => `<button class="timeframe-option ${state.timeframe===t.id?"selected":""}" data-timeframe="${t.id}"><span>${t.short}</span><small>${esc(t.label)}</small></button>`).join("")}
+          </div>
+        </div>` : ""}
+    </div>`;
+}
 
 const nav = [
   ["home","Home"],["trading","Trading"],["markets","Markets"],["positions","Positions"],
@@ -225,8 +260,19 @@ function view() {
      ${state.deriv?.last_error ? `<div class="error">${esc(state.deriv.last_error)}</div>`:""}
      <button class="btn primary" id="derivConnect">CONNECT / REFRESH DERIV</button>`);
   if (state.route==="trading") return page("TRADING","Execution workspace",
-    `<div class="grid two"><div class="card"><div class="label">Market stream</div><div class="chart">${state.symbols.length?"Verified symbols loaded from Supabase":"No verified market stream data"}</div></div>
-     <div class="card"><div class="label">Sandbox order</div><p class="muted">Execution is backend-controlled. The browser cannot directly alter sandbox balances.</p><div class="field"><label>Symbol</label><select id="tradeSymbol">${state.symbols.map(x=>`<option>${esc(x.symbol)}</option>`).join("")}</select></div><div class="field"><label>Quantity</label><input id="tradeQty" type="number" min="0" step="0.01" placeholder="0.10"></div><button class="btn primary" id="sandboxOrder">SUBMIT SANDBOX ORDER</button></div></div>`);
+    `<div class="card timeline-card">
+       <div class="section-head">
+         <div><div class="label">MARKET TIMELINE</div><h3>Chart interval</h3></div>
+         <span class="pill">${esc(timeframeById(state.timeframe).label)}</span>
+       </div>
+       ${timeframeControls()}
+       <div class="chart"><div><b>${esc(timeframeById(state.timeframe).label)}</b><p class="muted">${state.symbols.length?"Verified symbols loaded from Supabase":"No verified market stream data"}</p></div></div>
+     </div>
+     <div class="grid two" style="margin-top:15px">
+       <div class="card"><div class="label">Market stream</div><p class="muted">Timeline selection controls the chart interval. The full interval list is available from MORE.</p></div>
+       <div class="card"><div class="label">Sandbox order</div><p class="muted">Execution is backend-controlled. The browser cannot directly alter sandbox balances.</p><div class="field"><label>Symbol</label><select id="tradeSymbol">${state.symbols.map(x=>`<option>${esc(x.symbol)}</option>`).join("")}</select></div><div class="field"><label>Quantity</label><input id="tradeQty" type="number" min="0" step="0.01" placeholder="0.10"></div><button class="btn primary" id="sandboxOrder">SUBMIT SANDBOX ORDER</button></div>
+     </div>`);
+
   if (state.route==="sandbox") return page("SANDBOX","Virtual trading account",
     `<div class="grid cards">${stat("Initial capital",money(state.sandbox?.initial_capital),"Supabase")}${stat("Available capital",money(state.sandbox?.available_capital),"Supabase")}${stat("Equity",money(state.balance?.equity),"Supabase")}${stat("Allocated",money(state.sandbox?.allocated_capital),"Open sandbox allocation")}</div>
      <div class="card" style="margin-top:15px"><div class="label">Sandbox isolation</div><p class="muted">No sandbox value is represented as a real Deriv balance, real wallet balance or withdrawable customer funds.</p></div>`);
@@ -251,6 +297,15 @@ function bind() {
   document.getElementById("logout")?.addEventListener("click", async () => { await db.auth.signOut(); });
   document.getElementById("derivConnect")?.addEventListener("click", () => {
     location.href = SUPABASE_URL + "/functions/v1/deriv-oauth?action=start";
+  });
+  document.querySelectorAll("[data-timeframe]").forEach(el => el.onclick = () => {
+    state.timeframe = el.dataset.timeframe;
+    state.timeframeMenuOpen = false;
+    render();
+  });
+  document.getElementById("timeframeMore")?.addEventListener("click", () => {
+    state.timeframeMenuOpen = !state.timeframeMenuOpen;
+    render();
   });
   document.getElementById("sandboxOrder")?.addEventListener("click", () => {
     alert("Sandbox execution remains backend-controlled in Phase 1. No client-side balance mutation is permitted.");
