@@ -174,3 +174,89 @@ button,select,input{max-width:100%}
  .vt-timeframes button{flex:1;padding:7px 6px}
  .market-detail-heading h3{font-size:18px}
 }
+
+
+/* VELTRION Final App Shell — neutral document background, theme-aware */
+:root{color-scheme:light dark}
+:root[data-theme="light"]{color-scheme:light}
+:root[data-theme="dark"]{color-scheme:dark}
+html,body,#root{background:Canvas!important;color:CanvasText!important}
+.vel-app,.vel-main,.vel-content{background:Canvas!important;color:CanvasText!important}
+.vel-app{--vel-bg:Canvas;--vel-text:CanvasText;--vel-muted:GrayText;--vel-panel:color-mix(in srgb,CanvasText 5%,Canvas);--vel-border:color-mix(in srgb,CanvasText 16%,Canvas)}
+.vel-sidebar{background:Canvas!important;color:CanvasText!important;border-right:1px solid var(--vel-border)!important}
+.vel-topbar{background:Canvas!important;color:CanvasText!important;border-bottom:1px solid var(--vel-border)!important}
+.vel-topbar-brand{border:0;background:transparent;color:CanvasText;font-weight:850;letter-spacing:2px;cursor:pointer;padding:8px 10px}
+.vel-topbar-brand:hover{opacity:.75}
+.vel-back-home{border:1px solid var(--vel-border);background:transparent;color:CanvasText;border-radius:9px;min-width:40px;min-height:40px;cursor:pointer}
+.vel-primary-nav{display:flex;gap:4px;margin-left:18px;align-items:center}
+.vel-primary-nav button{border:0;background:transparent;color:GrayText;border-radius:9px;padding:9px 12px;cursor:pointer;font-size:12px;font-weight:750}
+.vel-primary-nav button span{margin-right:6px}
+.vel-primary-nav button:hover,.vel-primary-nav button.active{background:color-mix(in srgb,CanvasText 7%,Canvas);color:CanvasText}
+.is-home>.vel-main>.vel-primary-nav{padding:10px 20px;border-bottom:1px solid var(--vel-border);margin:0}
+.vel-theme-switch{border:1px solid var(--vel-border);background:transparent;color:CanvasText;border-radius:9px;width:40px;height:40px;cursor:pointer}
+.vel-theme-switch:hover{background:color-mix(in srgb,CanvasText 7%,Canvas)}
+.vel-mode-switch{border:1px solid var(--vel-border)!important;background:transparent!important;color:CanvasText!important}
+.vel-user{color:CanvasText!important}
+.vel-user small,.vel-brand-sub,.vel-nav-label,.vel-session{color:GrayText!important}
+.vel-nav-item{background:transparent!important;color:GrayText!important}
+.vel-nav-item:hover,.vel-nav-item.active{background:color-mix(in srgb,CanvasText 7%,Canvas)!important;color:CanvasText!important}
+.vel-sidebar-bottom{border-top:1px solid var(--vel-border)}
+.vel-content{padding-top:24px}
+.vel-page{color:CanvasText}
+.vel-page-heading h1{color:CanvasText}
+.vel-page-heading p,.vel-footnote,.vel-data-source,.vel-metric-card span,.vel-metric-card small,.vel-status-row>span,.vel-market-row small{color:GrayText!important}
+.vel-panel,.vel-metric-card,.market-account-card{background:color-mix(in srgb,CanvasText 5%,Canvas)!important;border-color:var(--vel-border)!important;box-shadow:none!important}
+.vel-metric-card strong,.vel-panel-title,.vel-status-row b,.vel-market-row strong,.vel-market-row span{color:CanvasText}
+.vel-home-primary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0}
+.vel-home-primary-card{min-height:150px;text-align:left;border:1px solid var(--vel-border);border-radius:14px;background:transparent;color:CanvasText;padding:20px;cursor:pointer;display:flex;flex-direction:column;gap:9px}
+.vel-home-primary-card:hover{background:color-mix(in srgb,CanvasText 5%,Canvas)}
+.vel-home-primary-card strong{font-size:20px}
+.vel-home-primary-card small{color:GrayText;line-height:1.5}
+.vel-home-primary-card b{margin-top:auto;font-size:12px}
+.home-card-kicker,.market-kicker,.market-choice-status,.market-choice-icon{font-size:9px;letter-spacing:1.2px;font-weight:850;color:GrayText}
+.home-terminal-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.home-terminal-grid button{display:flex;justify-content:space-between;gap:12px;align-items:center;text-align:left;padding:16px;border:1px solid var(--vel-border);border-radius:11px;background:transparent;color:CanvasText;cursor:pointer}
+.home-terminal-grid button:hover:not(:disabled){background:color-mix(in srgb,CanvasText 5%,Canvas)}
+.home-terminal-grid button:disabled{opacity:.65;cursor:not-allowed}
+.home-terminal-grid strong,.home-terminal-grid small{display:block}
+.home-terminal-grid small{color:GrayText;margin-top:5px;font-size:11px}
+.home-terminal-grid span{font-size:18px}
+.market-details-hero{display:flex;justify-content:space-between;gap:24px;align-items:center}
+.market-details-hero h2{font-size:28px;margin:7px 0 2px}
+.market-details-hero p{margin:0;color:GrayText}
+.market-price-placeholder{display:flex;flex-direction:column;gap:6px;text-align:right}
+.market-price-placeholder span{color:GrayText;font-size:11px}
+.market-terminal-choice{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.market-choice-card h2{margin:14px 0 7px}
+.market-choice-card p{color:GrayText;line-height:1.6;font-size:12px;min-height:60px}
+.market-choice-top{display:flex;justify-content:space-between;align-items:center}
+.market-choice-status{color:CanvasText}
+.market-choice-status.muted{color:GrayText}
+.market-choice-icon{border:1px solid var(--vel-border);border-radius:8px;padding:7px 9px;color:CanvasText}
+.vel-button{border:1px solid color-mix(in srgb,CanvasText 30%,Canvas);background:Canvas;color:CanvasText;border-radius:9px;padding:11px 14px;font-weight:800;cursor:pointer}
+.vel-button:hover:not(:disabled){background:color-mix(in srgb,CanvasText 7%,Canvas)}
+.vel-button-muted{color:GrayText;border-color:var(--vel-border)}
+.vel-button:disabled{cursor:not-allowed;opacity:.6}
+.market-details-note{margin-top:12px}
+.market-flow-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.market-flow-steps span{padding:12px;border:1px solid var(--vel-border);border-radius:9px;color:GrayText;font-size:11px}
+.vel-back-link{margin-top:14px;border:0;background:transparent;color:CanvasText;padding:8px 0;cursor:pointer;font-weight:750}
+.vel-back-link:hover{text-decoration:underline}
+.vel-mobile-nav{background:Canvas!important;border-top:1px solid var(--vel-border)!important}
+.vel-mobile-nav button{background:transparent!important;color:GrayText!important}
+.vel-mobile-nav button.active{color:CanvasText!important}
+@media(max-width:900px){
+ .vel-primary-nav{display:none}
+ .is-home>.vel-main>.vel-primary-nav{display:flex;overflow:auto}
+ .vel-home-primary{grid-template-columns:1fr}
+ .home-terminal-grid,.market-terminal-choice{grid-template-columns:1fr}
+ .market-details-hero{align-items:flex-start;flex-direction:column}
+ .market-price-placeholder{text-align:left}
+ .market-flow-steps{grid-template-columns:1fr 1fr}
+}
+@media(max-width:560px){
+ .is-home>.vel-main>.vel-primary-nav{padding:8px 10px}
+ .is-home>.vel-main>.vel-primary-nav button{flex:1;min-width:0;padding:8px 7px;font-size:10px}
+ .vel-content{padding-top:14px}
+ .market-flow-steps{grid-template-columns:1fr}
+}
