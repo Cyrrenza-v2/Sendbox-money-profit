@@ -347,6 +347,25 @@ async function handle(userId: string, body: any) {
       if (syncDerivAccountError) throw syncDerivAccountError;
     }
 
+    // Ensure the real profit wallet is provisioned during every successful live reconciliation.
+    // This keeps the wallet/reconciliation path consistent even when the account was
+    // synchronized before the wallet row existed.
+    const { data: existingProfitWallet, error: profitWalletLookupError } = await db
+      .from("real_profit_wallets")
+      .select("id")
+      .eq("account_id", account.id)
+      .maybeSingle();
+    if (profitWalletLookupError) throw profitWalletLookupError;
+    if (!existingProfitWallet) {
+      const { error: profitWalletCreateError } = await db.from("real_profit_wallets").insert({
+        account_id: account.id,
+        available_balance: 0,
+        reserved_balance: 0,
+        currency
+      });
+      if (profitWalletCreateError) throw profitWalletCreateError;
+    }
+
     const { data: updatedAccount, error: accountUpdateError } = await db.from("real_trading_accounts")
       .update({
         balance: liveBalance,
