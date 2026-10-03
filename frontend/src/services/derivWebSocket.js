@@ -1,4 +1,4 @@
-const DERIV_WS_URL = "wss://api.derivws.com/trading/v1/options/ws/public";
+const DERIV_WS_URL = "wss://api.derivws.com/trading/v1/options/ws/public"; // Public market-data endpoint; no app_id is required.
 
 class DerivMarketService {
   constructor() { this.ws=null; this.subscribers=new Map(); this.symbols=new Map(); this.statusListeners=new Set(); this.reconnectTimer=null; this.heartbeatTimer=null; this.manualClose=false; this.nextReqId=1; }
