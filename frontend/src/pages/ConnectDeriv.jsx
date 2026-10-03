@@ -57,17 +57,31 @@ export default function ConnectDeriv() {
 
   const verifyRealSession = async () => {
     setError("");
-    setSessionStatus("ISSUING SESSION");
+    setSessionStatus("CHECKING SESSION");
     try {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) throw sessionError;
       if (!session?.access_token) throw new Error("Sign in to VELTRION first.");
 
+      setSessionStatus("ISSUING SESSION");
       const { data, error: invokeError } = await supabase.functions.invoke("deriv-real-session", {
         body: { account_id: account?.deriv_loginid || undefined },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
-      if (invokeError) throw invokeError;
-      if (!data?.ok || !data?.websocket?.url) throw new Error(data?.error || "Deriv real WebSocket session was not issued.");
+      if (invokeError) {
+        let detail = invokeError.message || "Deriv real-session request failed.";
+        try {
+          const response = invokeError.context;
+          if (response?.clone) {
+            const payload = await response.clone().json();
+            detail = payload?.error || payload?.message || detail;
+          }
+        } catch {}
+        throw new Error(detail);
+      }
+      if (!data?.ok || !data?.websocket?.url) {
+        throw new Error(data?.error || data?.message || "Deriv real WebSocket session was not issued.");
+      }
 
       setSessionStatus("CONNECTING");
       await new Promise((resolve, reject) => {
@@ -186,8 +200,8 @@ export default function ConnectDeriv() {
             real Deriv WebSocket. This check does not place a trade or use real funds.
           </p>
         </div>
-        <button className="primary" onClick={verifyRealSession} disabled={sessionStatus === "ISSUING SESSION" || sessionStatus === "CONNECTING"}>
-          {sessionStatus === "ISSUING SESSION" || sessionStatus === "CONNECTING" ? "VERIFYING REAL CHANNEL…" : "VERIFY REAL TRADING CHANNEL"}
+        <button className="primary" onClick={verifyRealSession} disabled={sessionStatus === "CHECKING SESSION" || sessionStatus === "ISSUING SESSION" || sessionStatus === "CONNECTING"}>
+          {sessionStatus === "CHECKING SESSION" || sessionStatus === "ISSUING SESSION" || sessionStatus === "CONNECTING" ? "VERIFYING REAL CHANNEL…" : "VERIFY REAL TRADING CHANNEL"}
         </button>
         <button className="secondary-btn" onClick={connect} disabled={status === "STARTING OAUTH"}>
           {status === "STARTING OAUTH" ? "CONNECTING…" : "CONNECT / REFRESH DERIV"}
