@@ -60,11 +60,12 @@ export default function WorkspacePage({title,section}){
    <div className="vel-page-heading"><div><div className="vel-eyebrow">VELTRION / REAL ACCOUNT</div><h1>{title}</h1><p>Real Deriv connection status and VELTRION account provisioning are shown separately. No sandbox funds are represented as real funds.</p></div><span className="vel-data-source">SOURCE · DERIV CONNECTION + REAL ACCOUNT LEDGER</span></div>
    <div className="vel-panel">
     <div className="vel-panel-title">REAL ACCOUNT PROVISIONING <span>{account?"ACCOUNT RECORD FOUND":"NOT PROVISIONED"}</span></div>
-    {!account?<div className="vel-state"><div className="vel-state-mark">—</div><h3>No VELTRION real account has been provisioned</h3><p>Your Deriv authorization and a VELTRION real-account ledger record are separate things. A real account record is not present, so this screen cannot show a VELTRION real balance or equity.</p></div>:<div className="vel-data-grid">
+    {!account?<div className="vel-state"><div className="vel-state-mark">—</div><h3>No VELTRION real account has been provisioned</h3><p>Your Deriv authorization and a VELTRION real-account ledger record are separate things. This record mirrors the balance snapshot returned by Deriv during account verification; it is not a continuously refreshed live balance. Check the snapshot timestamp before relying on it.</p></div>:<div className="vel-data-grid">
      <div className="vel-data-field"><span>Deriv account ID</span><strong>{account.deriv_account_id||"Unavailable"}</strong></div>
      <div className="vel-data-field"><span>Currency</span><strong>{account.currency||"Unavailable"}</strong></div>
      <div className="vel-data-field"><span>Recorded balance</span><strong>{account.balance==null?"Unavailable":(account.currency||"")+" "+Number(account.balance).toFixed(2)}</strong></div>
-     <div className="vel-data-field"><span>Recorded equity</span><strong>{account.equity==null?"Unavailable":(account.currency||"")+" "+Number(account.equity).toFixed(2)}</strong></div>
+     <div className="vel-data-field"><span>Recorded equity snapshot</span><strong>{account.equity==null?"Unavailable":(account.currency||"")+" "+Number(account.equity).toFixed(2)}</strong></div>
+     <div className="vel-data-field"><span>Snapshot updated</span><strong>{account.updated_at?new Date(account.updated_at).toLocaleString():"Unavailable"}</strong></div>
      <div className="vel-data-field"><span>Account active</span><strong>{account.is_active?"Yes":"No"}</strong></div>
      <div className="vel-data-field"><span>Emergency stop</span><strong>{account.emergency_stopped?"ON":"OFF"}</strong></div>
     </div>}
