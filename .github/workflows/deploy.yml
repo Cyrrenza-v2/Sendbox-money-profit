@@ -1,4 +1,5 @@
 name: Deploy VELTRION to GitHub Pages
+# Deployment trigger for the current main branch build.
 
 on:
   push:
