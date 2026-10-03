@@ -63,8 +63,8 @@ export default function RealTradingTerminal() {
 
   async function setStop(active) {
     setMessage("");
-    const { error } = await supabase.rpc("set_global_emergency_stop", { p_active: active });
-    if (error) { setMessage(error.message); return; }
+    const { data, error } = await supabase.functions.invoke("admin-control", { body: { active } });
+    if (error) { setMessage(data?.error || error.message); return; }
     setEmergencyStopped(active);
     if (active) setArmed(false);
     setMessage(active ? "Global emergency stop active. New trading requests are blocked." : "Global emergency stop released. Per-mode locks remain enforced.");
