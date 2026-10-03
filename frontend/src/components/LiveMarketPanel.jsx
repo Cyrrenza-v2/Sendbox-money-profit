@@ -72,7 +72,10 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         if (disposed) return;
         setConnected(true);
         setError("");
-        socket.send(JSON.stringify({ active_symbols: "brief", req_id: 1 }));\n        if (selectedSymbolRef.current) {\n          socket.send(JSON.stringify({ ticks: selectedSymbolRef.current, subscribe: 1, req_id: 9000 }));\n        }
+        socket.send(JSON.stringify({ active_symbols: "brief", req_id: 1 }));
+        if (selectedSymbolRef.current) {
+          socket.send(JSON.stringify({ ticks: selectedSymbolRef.current, subscribe: 1, req_id: 9000 }));
+        }
       };
 
       socket.onmessage = event => {
@@ -121,7 +124,10 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             // Queue a modest number of tick subscriptions to avoid flooding the public socket.
             tickTimers.forEach(clearTimeout);
             tickTimers = [];
-            if (selectedSymbolRef.current && !unique.some(item => item.symbol === selectedSymbolRef.current)) {\n              socket.send(JSON.stringify({ ticks: selectedSymbolRef.current, subscribe: 1, req_id: 9000 }));\n            }\n            unique.slice(0, 80).forEach((item, index) => {
+            if (selectedSymbolRef.current && !unique.some(item => item.symbol === selectedSymbolRef.current)) {
+              socket.send(JSON.stringify({ ticks: selectedSymbolRef.current, subscribe: 1, req_id: 9000 }));
+            }
+            unique.slice(0, 80).forEach((item, index) => {
               tickTimers.push(setTimeout(() => {
                 if (!disposed && socket?.readyState === WebSocket.OPEN) {
                   socket.send(JSON.stringify({ ticks: item.symbol, subscribe: 1, req_id: 1000 + index }));
