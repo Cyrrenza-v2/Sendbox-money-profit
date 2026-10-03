@@ -6,7 +6,7 @@ export class AnalyticsEngine {
 
   async calculatePerformanceMetrics(accountType) {
     const tableName = accountType === "SANDBOX" ? "sandbox_orders" : "real_orders";
-    const { data: orders, error } = await this.supabase.from(tableName).select("*").eq("status", "CLOSED").order("closed_at", { ascending: true });
+    const { data: orders, error } = await this.supabase.from(tableName).select("*").eq("status", "closed").order("closed_at", { ascending: true });
     if (error) throw new Error("Failed to fetch analytics orders: " + error.message);
     let grossProfit = 0, grossLoss = 0, wins = 0, losses = 0, running = 0;
     const equityCurve = [];
