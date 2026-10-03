@@ -13,35 +13,17 @@ export default function OperationsControlView(){
       supabase.auth.getSession(),
       supabase.from("deriv_connections").select("status,updated_at,last_verified_at").order("last_verified_at",{ascending:false}).limit(1)
     ]);
-
-    const now=Date.now();
-    const staleMs=5*60*1000;
-    const stored=h.data||[];
-    const byName=new Map(stored.map(x=>[x.service_name,x]));
-    const dbHealthy=!h.error&&!c.error&&!r.error&&!a.error;
-
-    const healthNames=["API Gateway","Authentication Engine","Deriv Market Data","Reconciliation Worker","Supabase Database"];
-    const live=[
-      {service_name:"API Gateway",status:"HEALTHY",last_heartbeat:new Date().toISOString()},
-      {service_name:"Authentication Engine",status:session?.data?.session?"HEALTHY":"DEGRADED",last_heartbeat:new Date().toISOString()},
-      {service_name:"Deriv Market Data",status:(deriv?.data?.[0]?.status==="connected"||deriv?.data?.[0]?.status==="CONNECTED")?"HEALTHY":"DEGRADED",last_heartbeat:deriv?.data?.[0]?.last_verified_at||new Date().toISOString()},
-      {service_name:"Reconciliation Worker",status:"HEALTHY",last_heartbeat:new Date().toISOString()},
-      {service_name:"Supabase Database",status:dbHealthy?"HEALTHY":"DEGRADED",last_heartbeat:new Date().toISOString()}
-    ].map(x=>{
-      const old=byName.get(x.service_name);
-      const heartbeat=new Date(x.last_heartbeat).getTime();
-      return {...x,metadata:{source:"live-control-check",previous_status:old?.status,stale:!Number.isFinite(heartbeat)||now-heartbeat>staleMs}};
-    });
-    setHealth(live);
-    setControls(c.data||[]);setLimits(r.data||[]);setAlerts(a.data||[]);
+    const now=Date.now(),staleMs=5*60*1000,stored=h.data||[],byName=new Map(stored.map(x=>[x.service_name,x])),dbHealthy=!h.error&&!c.error&&!r.error&&!a.error;
+    const live=["API Gateway","Authentication Engine","Deriv Market Data","Reconciliation Worker","Supabase Database"].map((name,i)=>({service_name:name,status:i===1?(session?.data?.session?"HEALTHY":"DEGRADED"):i===2?((deriv?.data?.[0]?.status==="connected"||deriv?.data?.[0]?.status==="CONNECTED")?"HEALTHY":"DEGRADED"):dbHealthy?"HEALTHY":"DEGRADED",last_heartbeat:i===2?(deriv?.data?.[0]?.last_verified_at||new Date().toISOString()):new Date().toISOString()})).map(x=>{const old=byName.get(x.service_name),heartbeat=new Date(x.last_heartbeat).getTime();return {...x,metadata:{source:"live-control-check",previous_status:old?.status,stale:!Number.isFinite(heartbeat)||now-heartbeat>staleMs}}});
+    setHealth(live);setControls(c.data||[]);setLimits(r.data||[]);setAlerts(a.data||[]);
   }
   useEffect(()=>{load();const t=setInterval(load,10000);return()=>clearInterval(t)},[]);
   async function setGlobalStop(active){
     setBusy(true);setMessage("");
     const {data:{user}}=await supabase.auth.getUser();
     if(!user){setMessage("AUTH_REQUIRED");setBusy(false);return;}
-    const {data,error}=await supabase.rpc("set_global_emergency_stop",{p_active:active});
-    if(error){setMessage(error.message);setBusy(false);return;}
+    const {data,error}=await supabase.functions.invoke("admin-control",{body:{active}});
+    if(error){setMessage(data?.error||error.message);setBusy(false);return;}
     setMessage(data?.message|| (active?"GLOBAL EMERGENCY STOP ACTIVE":"GLOBAL EMERGENCY STOP RELEASED")); await load(); setBusy(false);
   }
   const stopped=controls.find(x=>x.control_key==="EMERGENCY_STOP")?.is_active ?? true;
