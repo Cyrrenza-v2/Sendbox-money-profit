@@ -16,7 +16,9 @@ export default function RealTradingTerminal() {
   const [message, setMessage] = useState("");
   const [connection, setConnection] = useState(null);
   const [sandboxAccount, setSandboxAccount] = useState(null);
-  const [marketPrice, setMarketPrice] = useState(null);\n  const markInFlightRef = useRef(false);\n  const lastMarkAtRef = useRef(0);
+  const [marketPrice, setMarketPrice] = useState(null);
+  const markInFlightRef = useRef(false);
+  const lastMarkAtRef = useRef(0);
 
   async function loadState() {
     try {
@@ -27,9 +29,12 @@ export default function RealTradingTerminal() {
       ]);
       const stop = controls?.find(x => x.control_key === "EMERGENCY_STOP")?.is_active ?? true;
       setEmergencyStopped(Boolean(stop));
-      setConnection(deriv?.data || deriv || null);
+      const derivState = deriv?.data || deriv || null;
+      setConnection(derivState);
       const accounts = sandbox?.data?.accounts || [];
-      setSandboxAccount(accounts.find(a => String(a.status).toLowerCase() === "active") || accounts[0] || null);
+      const activeAccount = accounts.find(a => String(a.status).toLowerCase() === "active") || accounts[0] || null;
+      setSandboxAccount(activeAccount);
+      setArmed(!Boolean(stop) && String(derivState?.status || "disconnected").toLowerCase() === "connected" && Boolean(activeAccount?.id));
     } catch (error) {
       setMessage(error?.message || "Unable to load trading state.");
     }
@@ -40,16 +45,19 @@ export default function RealTradingTerminal() {
   async function arm() {
     setMessage("");
     try {
-      const state = await api("/deriv/status");
+      const [state, sandbox] = await Promise.all([api("/deriv/status"), sandboxEngine.snapshot()]);
       const status = String(state?.data?.status || "disconnected").toLowerCase();
       if (status !== "connected") throw new Error("DERIV_ACCOUNT_NOT_CONNECTED");
-      const { error } = await supabase.rpc("set_global_emergency_stop", { p_active: false });
-      if (error) throw error;
-      setEmergencyStopped(false);
+      const accounts = sandbox?.data?.accounts || [];
+      const activeAccount = accounts.find(a => String(a.status).toLowerCase() === "active") || accounts[0] || null;
+      if (!activeAccount?.id) throw new Error("SANDBOX_ACCOUNT_NOT_AVAILABLE");
+      if (emergencyStopped) throw new Error("GLOBAL_EMERGENCY_STOP_ACTIVE");
+      setConnection(state?.data || state || null);
+      setSandboxAccount(activeAccount);
       setArmed(true);
-      setMessage("Deriv account verified. Trading controls are armed.");
+      setMessage("Deriv account connected. Live market data will execute against VELTRION sandbox funds only.");
     } catch (error) {
-      setMessage(error?.message || "REAL_MODE_ENABLE_FAILED");
+      setMessage(error?.message || "SANDBOX_CONNECT_FAILED");
     }
   }
 
@@ -62,8 +70,33 @@ export default function RealTradingTerminal() {
     setMessage(active ? "Global emergency stop active. New trading requests are blocked." : "Global emergency stop released. Per-mode locks remain enforced.");
   }
 
-  async function handleMarketTick(tick) {\n    const price = Number(tick?.quote);\n    setMarketPrice(Number.isFinite(price) ? price : null);\n    if (!sandboxAccount?.id || !symbol || !Number.isFinite(price) || price <= 0) return;\n    const now = Date.now();\n    if (markInFlightRef.current || now - lastMarkAtRef.current < 1000) return;\n    lastMarkAtRef.current = now;\n    markInFlightRef.current = true;\n    try {\n      await sandboxEngine.mark({ symbol, price });\n    } catch {\n      // Position marking is best-effort; the next live tick retries automatically.\n    } finally {\n      markInFlightRef.current = false;\n    }\n  }\n\n  function requestOrder(side) {
+  async function handleMarketTick(tick) {
+    const price = Number(tick?.quote);
+    setMarketPrice(Number.isFinite(price) ? price : null);
+    if (!sandboxAccount?.id || !symbol || !Number.isFinite(price) || price <= 0) return;
+    const now = Date.now();
+    if (markInFlightRef.current || now - lastMarkAtRef.current < 1000) return;
+    lastMarkAtRef.current = now;
+    markInFlightRef.current = true;
+    try {
+      await sandboxEngine.mark({ symbol, price });
+    } catch {
+      // Position marking is best-effort; the next live tick retries automatically.
+    } finally {
+      markInFlightRef.current = false;
+    }
+  }
+
+  function requestOrder(side) {
     if (!armed || emergencyStopped) return;
+    if (!sandboxAccount?.id) {
+      setMessage("SANDBOX_ACCOUNT_NOT_AVAILABLE");
+      return;
+    }
+    if (!Number.isFinite(Number(marketPrice)) || Number(marketPrice) <= 0) {
+      setMessage("LIVE_MARKET_PRICE_NOT_AVAILABLE");
+      return;
+    }
     setPendingSide(side);
     setConfirmOpen(true);
   }
@@ -85,6 +118,7 @@ export default function RealTradingTerminal() {
         idempotency_key: crypto.randomUUID(),
       });
       const order = result?.order || result?.data?.order || result?.data || result;
+      await loadState();
       setMessage(`Sandbox order executed using VELTRION internal funds. ${side === "BUY" ? "CALL" : "PUT"} ${symbol} at ${Number(marketPrice).toLocaleString("en-US", { maximumFractionDigits: 8 })}. No real Deriv money was used.${order?.id ? ` Order ID: ${order.id}` : ""}`);
     } catch (error) {
       setMessage(error?.message || "SANDBOX_ORDER_REJECTED");
@@ -119,7 +153,8 @@ export default function RealTradingTerminal() {
               {emergencyStopped ? "RELEASE GLOBAL STOP" : "EMERGENCY STOP"}
             </button>
           </div>
-          <LiveMarketPanel compact selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={handleMarketTick} />\n          <div className="panel"><b>Execution path:</b> Real Deriv market price → VELTRION sandbox funds → sandbox order → sandbox position/P&amp;L. <b>No real Deriv order is sent.</b></div>
+          <LiveMarketPanel compact selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={handleMarketTick} />
+          <div className="panel"><b>Execution path:</b> Real Deriv market price → VELTRION sandbox funds → sandbox order → sandbox position/P&amp;L. <b>No real Deriv order is sent.</b></div>
           <div className="real-grid">
             <label>Stake amount (USD)<input value={stake} onChange={e => setStake(e.target.value)} type="number" min="0.01" step="0.01" disabled={emergencyStopped}/></label>
             <label>Deriv symbol<input value={symbol} onChange={e => setSymbol(e.target.value)} disabled={emergencyStopped}/></label>
