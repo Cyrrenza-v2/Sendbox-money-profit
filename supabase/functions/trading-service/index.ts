@@ -8,7 +8,7 @@ const db = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: fa
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization,apikey,content-type",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info, x-supabase-api-version",
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
 };
 
@@ -251,6 +251,127 @@ async function reconcileRealState(userId: string, balancePayload: any, profitPay
 
 async function handle(userId: string, body: any) {
   const op = String(body.operation || body.action || "status");
+
+  if (op === "balance_reconcile") {
+    const { account } = await realContext(userId);
+    const balanceResponse = await realWsCall(userId, { balance: 1 }, "balance");
+    const balanceInfo = balanceResponse?.balance;
+    const liveBalance = Number(balanceInfo?.balance);
+    const currency = String(balanceInfo?.currency || account.currency || "USD");
+    if (!Number.isFinite(liveBalance) || liveBalance < 0) {
+      throw new Error("DERIV_LIVE_BALANCE_INVALID");
+    }
+
+    // Equity is only set from cash balance when Deriv confirms there are no open contracts.
+    // If portfolio state is unavailable or positions exist, preserve the stored equity and mark it unverified.
+    let noOpenPositions = false;
+    try {
+      const portfolioResponse = await realWsCall(userId, { portfolio: 1 }, "portfolio");
+      const contracts = portfolioResponse?.portfolio?.contracts;
+      noOpenPositions = Array.isArray(contracts) && contracts.length === 0;
+    } catch {
+      noOpenPositions = false;
+    }
+
+    const observedAt = new Date().toISOString();
+    const previousBalance = Number(account.balance || 0);
+    const previousEquity = Number(account.equity || 0);
+    const balanceDifference = Number((liveBalance - previousBalance).toFixed(2));
+
+    const { data: derivAccount, error: derivAccountError } = await db.from("deriv_accounts")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("deriv_account_id", account.deriv_account_id)
+      .maybeSingle();
+    if (derivAccountError) throw derivAccountError;
+
+    const { data: updatedAccount, error: accountUpdateError } = await db.from("real_trading_accounts")
+      .update({
+        balance: liveBalance,
+        ...(noOpenPositions ? { equity: liveBalance } : {}),
+        currency,
+        updated_at: observedAt
+      })
+      .eq("id", account.id)
+      .eq("user_id", userId)
+      .select("id")
+      .maybeSingle();
+    if (accountUpdateError) throw accountUpdateError;
+    if (!updatedAccount) throw new Error("REAL_ACCOUNT_BALANCE_UPDATE_FAILED");
+
+    const snapshot = await db.from("deriv_account_snapshots").insert({
+      user_id: userId,
+      deriv_account_id: derivAccount?.id || null,
+      balance: liveBalance,
+      equity: noOpenPositions ? liveBalance : null,
+      currency,
+      snapshot_at: observedAt,
+      raw: {
+        source: "authenticated_deriv_websocket",
+        loginid: balanceInfo?.loginid || null,
+        balance: liveBalance,
+        currency,
+        open_positions_confirmed_empty: noOpenPositions
+      }
+    });
+    if (snapshot.error) throw snapshot.error;
+
+    let walletQuery = db.from("deriv_wallets").select("id").eq("user_id", userId);
+    if (derivAccount?.id) walletQuery = walletQuery.eq("deriv_account_id", derivAccount.id);
+    else walletQuery = walletQuery.is("deriv_account_id", null);
+    const { data: walletRows, error: walletLookupError } = await walletQuery
+      .order("observed_at", { ascending: false }).limit(1);
+    if (walletLookupError) throw walletLookupError;
+
+    const walletValues = {
+      user_id: userId,
+      deriv_account_id: derivAccount?.id || null,
+      provider_wallet_id: account.deriv_account_id,
+      currency,
+      balance: liveBalance,
+      available_balance: liveBalance,
+      observed_at: observedAt,
+      raw: {
+        source: "authenticated_deriv_websocket",
+        loginid: balanceInfo?.loginid || null,
+        balance: liveBalance,
+        currency
+      }
+    };
+    const walletWrite = walletRows?.[0]?.id
+      ? await db.from("deriv_wallets").update(walletValues).eq("id", walletRows[0].id)
+      : await db.from("deriv_wallets").insert(walletValues);
+    if (walletWrite.error) throw walletWrite.error;
+
+    const reconciliation = await db.from("financial_reconciliation").insert({
+      user_id: userId,
+      source: "deriv",
+      environment: "real",
+      resource_type: "account_balance",
+      resource_id: account.id,
+      external_value: { balance: liveBalance, currency, observed_at: observedAt },
+      internal_value: { balance: previousBalance, equity: previousEquity, currency: account.currency || currency },
+      status: Math.abs(balanceDifference) <= 0.01 ? "MATCH" : "RECONCILED",
+      difference: balanceDifference,
+      reconciled_at: observedAt
+    });
+    if (reconciliation.error) throw reconciliation.error;
+
+    return {
+      account_id: account.deriv_account_id,
+      currency,
+      balance: liveBalance,
+      previous_stored_balance: previousBalance,
+      balance_difference: balanceDifference,
+      equity: noOpenPositions ? liveBalance : null,
+      equity_verified: noOpenPositions,
+      snapshot_saved: true,
+      wallet_observation_saved: true,
+      reconciliation_recorded: true,
+      observed_at: observedAt,
+      source: "authenticated_deriv_websocket"
+    };
+  }
 
   if (op === "accu_proposal") {
     const template = validateAccuTemplate(body.contract_template);
