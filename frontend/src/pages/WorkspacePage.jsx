@@ -17,6 +17,33 @@ const configBySection = {
  settings:{intro:"Application configuration managed by the backend.",source:"app_settings"},
  alerts:{intro:"Recent system and operational alerts.",source:"audit_logs"}
 };
+
+function MarketWorkspace({ title }) {
+ const navigate=useNavigate();
+ const [accountState,setAccountState]=useState({loading:true,sandbox:null,real:null,error:""});
+ useEffect(()=>{let alive=true;async function load(){try{
+  const {data:{user}}=await supabase.auth.getUser();
+  if(!user)throw new Error("Sign in to view your account summaries.");
+  const [sandbox,real]=await Promise.all([
+   supabase.from("sandbox_accounts").select("id,currency,available_capital,allocated_capital,status").eq("user_id",user.id).maybeSingle(),
+   supabase.from("real_trading_accounts").select("id,currency,balance,equity,is_active,emergency_stopped").eq("user_id",user.id).maybeSingle()
+  ]);
+  if(sandbox.error)throw sandbox.error;
+  if(real.error)throw real.error;
+  if(alive)setAccountState({loading:false,sandbox:sandbox.data,real:real.data,error:""});
+ }catch(e){if(alive)setAccountState({loading:false,sandbox:null,real:null,error:e?.message||"Account summary unavailable."});}}
+ load();return()=>{alive=false;};},[]);
+ return <div className="vel-page">
+  <div className="vel-page-heading"><div><div className="vel-eyebrow">VELTRION / MARKET WATCH</div><h1>{title}</h1><p>Browse Deriv markets, check the latest public quotes, then open the terminal for candles and sandbox order entry.</p></div><span className="vel-data-source">SOURCE · DERIV PUBLIC MARKET FEED</span></div>
+  <div className="market-account-strip">
+   <div className="market-account-card"><span>YOUR SANDBOX ACCOUNT</span><strong>{accountState.loading?"Loading…":accountState.sandbox?((accountState.sandbox.currency||"USD")+" "+Number(accountState.sandbox.available_capital||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})):"Not provisioned"}</strong><small>{accountState.sandbox?("Virtual balance · "+(accountState.sandbox.status||"available")):"Virtual orders require a sandbox account"}</small></div>
+   <div className="market-account-card"><span>YOUR REAL DERIV ACCOUNT</span><strong>{accountState.loading?"Loading…":accountState.real?(accountState.real.currency||"Currency unavailable")+" "+(accountState.real.balance==null?"Balance unavailable":Number(accountState.real.balance).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})):"Not connected"}</strong><small>{accountState.real?(accountState.real.is_active?"Account record active":"Account record inactive"):"Real trading remains locked until separately verified"}</small></div>
+   <div className="market-account-card market-account-state"><span>TRADING MODE</span><strong>Sandbox only</strong><small>Market browsing does not execute an order</small></div>
+  </div>
+  {accountState.error&&<div className="vel-error" role="status">{accountState.error}</div>}
+  <LiveMarketPanel onSymbolChange={()=>{}} onOpenTerminal={symbol=>navigate(`/app/trading/terminal?symbol=${encodeURIComponent(symbol)}`)}/>
+ </div>;
+}
 export default function WorkspacePage({title,section}){
  const navigate=useNavigate();
  const [state,setState]=useState({loading:true,error:"",data:null});
@@ -52,7 +79,7 @@ export default function WorkspacePage({title,section}){
  if(error)throw error;if(alive)setState({loading:false,error:"",data});
  }catch(e){if(alive)setState({loading:false,error:e?.message||"Unable to load backend data.",data:null});}}
  load();return()=>{alive=false};},[section]);
- if(section==="markets") return <div className="vel-page"><div className="vel-page-heading"><div><div className="vel-eyebrow">VELTRION / MARKET DATA</div><h1>{title}</h1><p>All currently active Deriv instruments with live public tick prices. This screen displays market data only and does not execute trades.</p></div><span className="vel-data-source">SOURCE · DERIV LIVE FEED</span></div><LiveMarketPanel onSymbolChange={symbol=>navigate(`/app/trading/terminal?symbol=${encodeURIComponent(symbol)}`)} /></div>;
+ if(section==="markets") return <MarketWorkspace title={title}/>;
  if(section==="real"&&!state.loading&&!state.error){
   const account=state.data?.account||null;
   const configuration=state.data?.configuration||null;

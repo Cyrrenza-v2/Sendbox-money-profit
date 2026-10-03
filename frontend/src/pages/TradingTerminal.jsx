@@ -4,43 +4,129 @@ import { supabase } from "../supabaseClient";
 import LiveMarketPanel from "../components/LiveMarketPanel";
 import { sandboxEngine } from "../services/sandboxEngine";
 
-const SYMBOLS = [{ symbol: "frxEURUSD", name: "EUR/USD" }, { symbol: "frxGBPUSD", name: "GBP/USD" }, { symbol: "frxUSDJPY", name: "USD/JPY" }];
 const fmt = (n, digits = 5) => Number.isFinite(Number(n)) ? Number(n).toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: Math.min(2, digits) }) : "—";
+const TIMEFRAMES = [{label:"1m", value:"M1", seconds:60},{label:"5m", value:"M5", seconds:300},{label:"15m", value:"M15", seconds:900},{label:"1h", value:"H1", seconds:3600},{label:"4h", value:"H4", seconds:14400},{label:"1d", value:"D1", seconds:86400}];
 
 function CandleChart({ candles, symbol, price }) {
-  const width = 900, height = 310, pad = 22, data = candles.slice(-36);
-  if (data.length < 2) return <div className="vt-chart-empty"><span className="vt-live-dot" /> Waiting for live ticks to build candles for {symbol}. Historical candles will appear when a history feed is connected.</div>;
-  const lo = Math.min(...data.map(c => c.low)), hi = Math.max(...data.map(c => c.high)), range = hi - lo || Math.max(Math.abs(hi) * .0001, .00001);
-  const y = v => pad + ((hi - v) / range) * (height - pad * 2), step = (width - pad * 2) / data.length;
-  return <svg className="vt-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Candlestick chart for ${symbol} based on received live ticks`}>
-    {[0,1,2,3,4].map(i => <g key={i}><line x1={pad} x2={width-pad} y1={pad+i*(height-pad*2)/4} y2={pad+i*(height-pad*2)/4} stroke="currentColor" opacity=".13" strokeDasharray="4 5"/><text x={width-pad} y={pad+i*(height-pad*2)/4-4} textAnchor="end" fill="currentColor" opacity=".55" fontSize="11">{fmt(hi-i*range/4, 6)}</text></g>)}
-    {data.map((c,i) => { const x=pad+i*step+step/2, up=c.close>=c.open, color=up?"#34d399":"#f87171", top=y(Math.max(c.open,c.close)), bottom=y(Math.min(c.open,c.close)); return <g key={c.time}><line x1={x} x2={x} y1={y(c.high)} y2={y(c.low)} stroke={color} strokeWidth="1.4"/><rect x={x-Math.max(2,step*.27)} y={top} width={Math.max(4,step*.54)} height={Math.max(1,bottom-top)} fill={color} rx="1"/></g>; })}
-    {Number.isFinite(price) && price>=lo && price<=hi && <g><line x1={pad} x2={width-pad} y1={y(price)} y2={y(price)} stroke="#60a5fa" strokeDasharray="5 4"/><text x={pad+4} y={y(price)-5} fill="#60a5fa" fontSize="11">{fmt(price,6)}</text></g>}
+  const width=1100,height=390,pad={top:18,right:82,bottom:24,left:12},data=candles.slice(-90);
+  if (!data.length) return <div className="vt-chart-empty"><span className="vt-live-dot" /> Loading historical candles for {symbol}…</div>;
+  const lo=Math.min(...data.map(c=>c.low),Number.isFinite(price)?price:Infinity),hi=Math.max(...data.map(c=>c.high),Number.isFinite(price)?price:-Infinity),range=hi-lo||Math.max(Math.abs(hi)*.0001,.00001);
+  const chartW=width-pad.left-pad.right,chartH=height-pad.top-pad.bottom,y=v=>pad.top+((hi-v)/range)*chartH,step=chartW/data.length;
+  const priceDigits= Math.abs(hi)<10?5:2;
+  return <svg className="vt-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Candlestick chart for ${symbol}`}>
+    {[0,1,2,3,4].map(i=>{const value=hi-range*i/4,yy=pad.top+chartH*i/4;return <g key={i}><line x1={pad.left} x2={width-pad.right} y1={yy} y2={yy} stroke="currentColor" opacity=".13" strokeDasharray="3 5"/><text x={width-pad.right+7} y={yy+4} fill="currentColor" opacity=".65" fontSize="11">{fmt(value,priceDigits)}</text></g>;})}
+    {data.map((c,i)=>{const x=pad.left+i*step+step/2,up=c.close>=c.open,color=up?"#20c997":"#f05252",top=y(Math.max(c.open,c.close)),bottom=y(Math.min(c.open,c.close)),bodyW=Math.max(2,Math.min(11,step*.64));return <g key={c.time}><line x1={x} x2={x} y1={y(c.high)} y2={y(c.low)} stroke={color} strokeWidth="1.2"/><rect x={x-bodyW/2} y={top} width={bodyW} height={Math.max(1,bottom-top)} fill={color} rx=".6"/></g>;})}
+    {Number.isFinite(price)&&<g><line x1={pad.left} x2={width-pad.right} y1={y(price)} y2={y(price)} stroke="#60a5fa" strokeWidth="1" strokeDasharray="5 4"/><rect x={width-pad.right+2} y={y(price)-10} width={pad.right-4} height="20" rx="3" fill="#2563eb"/><text x={width-pad.right+6} y={y(price)+4} fill="#fff" fontSize="10">{fmt(price,priceDigits)}</text></g>}
+    {data.filter((_,i)=>i%Math.max(1,Math.ceil(data.length/6))===0).map(c=><text key={`time-${c.time}`} x={pad.left+data.indexOf(c)*step} y={height-6} fill="currentColor" opacity=".5" fontSize="10">{new Date(c.time*1000).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</text>)}
   </svg>;
 }
 
+function readCandles(message) {
+  const raw=message?.candles||message?.history?.candles||[];
+  return raw.map(c=>({time:Number(c.epoch),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)}))
+    .filter(c=>Number.isFinite(c.time)&&[c.open,c.high,c.low,c.close].every(Number.isFinite)).sort((a,b)=>a.time-b.time);
+}
+
 export default function TradingTerminal() {
-  const [searchParams] = useSearchParams();
-  const [symbol,setSymbol]=useState(()=>searchParams.get("symbol") || "frxEURUSD"), [tick,setTick]=useState(null), [feed,setFeed]=useState("WAITING"), [candles,setCandles]=useState([]), [timeframe,setTimeframe]=useState("M5"), [account,setAccount]=useState(null), [positions,setPositions]=useState([]), [quantity,setQuantity]=useState("0.01"), [ai,setAi]=useState(null), [aiBusy,setAiBusy]=useState(false), [busy,setBusy]=useState(false), [error,setError]=useState("");
-  const latestCandleRef=useRef(null); const lastMarkRef=useRef(0);
+  const [searchParams]=useSearchParams();
+  const [symbol,setSymbol]=useState(()=>searchParams.get("symbol")||"frxEURUSD");
+  const [tick,setTick]=useState(null),[feed,setFeed]=useState("WAITING"),[candles,setCandles]=useState([]),[timeframe,setTimeframe]=useState("M5");
+  const [account,setAccount]=useState(null),[positions,setPositions]=useState([]),[orders,setOrders]=useState([]);
+  const [quantity,setQuantity]=useState("0.01"),[stopLoss,setStopLoss]=useState(""),[takeProfit,setTakeProfit]=useState("");
+  const [ai,setAi]=useState(null),[aiBusy,setAiBusy]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[activeTab,setActiveTab]=useState("positions");
+  const lastMarkRef=useRef(0),priceRef=useRef(null);
   useEffect(()=>{const requested=searchParams.get("symbol");if(requested)setSymbol(requested);},[searchParams]);
-  const refresh=async()=>{const r=await sandboxEngine.snapshot();setAccount(r.data?.accounts?.[0]||null);setPositions(r.data?.positions||[]);};
-  useEffect(()=>{refresh().catch(e=>setError(e.message));const timer=setInterval(()=>refresh().catch(()=>{}),5000);return()=>clearInterval(timer);},[]);
-  useEffect(()=>{setCandles([]);setTick(null);setAi(null);latestCandleRef.current=null;},[symbol,timeframe]);
-  const onPrice=next=>{const price=Number(next?.quote);if(!Number.isFinite(price))return;setTick({price,epoch:Number(next.epoch),pipSize:next.pipSize});setFeed("LIVE");const interval=timeframe==="M1"?60:timeframe==="M5"?300:timeframe==="M15"?900:3600;const bucket=Math.floor(Number(next.epoch||Date.now()/1000)/interval)*interval;const prev=latestCandleRef.current;if(!prev||prev.time!==bucket){const candle={time:bucket,open:price,high:price,low:price,close:price};latestCandleRef.current=candle;setCandles(list=>[...list,candle].slice(-120));}else{const candle={...prev,high:Math.max(prev.high,price),low:Math.min(prev.low,price),close:price};latestCandleRef.current=candle;setCandles(list=>{const copy=[...list];if(copy.length)copy[copy.length-1]=candle;else copy.push(candle);return copy;});}if(positions.length && Date.now()-lastMarkRef.current>1500){lastMarkRef.current=Date.now();sandboxEngine.mark({symbol,price}).catch(()=>{});}};
-  const symbolName=SYMBOLS.find(s=>s.symbol===symbol)?.name||symbol;
+
+  const refresh=async()=>{const r=await sandboxEngine.snapshot();const data=r.data||{};setAccount(data.accounts?.[0]||data.account||null);setPositions(data.positions||[]);setOrders(data.orders||[]);};
+  useEffect(()=>{let alive=true;refresh().catch(e=>{if(alive)setError(e.message||"Sandbox account could not be loaded.");});const timer=setInterval(()=>refresh().catch(()=>{}),5000);return()=>{alive=false;clearInterval(timer);};},[]);
+
+  // Load real historical OHLC candles from Deriv. The separate socket keeps the
+  // chart history independent from the market-watch socket and never authorizes trades.
+  useEffect(()=>{
+    let disposed=false,socket=null,retry=null,timeout=null;
+    setCandles([]);setAi(null);
+    const timeframeInfo=TIMEFRAMES.find(t=>t.value===timeframe)||TIMEFRAMES[1];
+    const connect=()=>{
+      if(disposed)return;
+      try{socket=new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");}
+      catch{setFeed("RECONNECTING");return;}
+      timeout=setTimeout(()=>{if(!disposed&&socket?.readyState!==WebSocket.OPEN){try{socket.close();}catch{};}},10000);
+      socket.onopen=()=>{if(disposed)return;clearTimeout(timeout);socket.send(JSON.stringify({ticks_history:symbol,adjust_start_time:1,count:150,end:"latest",style:"candles",granularity:timeframeInfo.seconds,req_id:7101}));};
+      socket.onmessage=event=>{if(disposed)return;try{const message=JSON.parse(event.data);if(message.error){if(message.req_id===7101)setError("Historical candle feed: "+(message.error.message||"unavailable"));return;}if(message.req_id===7101){const history=readCandles(message);if(history.length)setCandles(history);else if(message.msg_type!=="history")setError("Deriv did not return historical candles for this market/timeframe.");}}catch{}};
+      socket.onerror=()=>{if(!disposed)setFeed("RECONNECTING");};
+      socket.onclose=()=>{if(!disposed)retry=setTimeout(connect,5000);};
+    };
+    connect();
+    return()=>{disposed=true;clearTimeout(timeout);if(retry)clearTimeout(retry);try{socket?.close();}catch{};};
+  },[symbol,timeframe]);
+
+  const onPrice=next=>{
+    const price=Number(next?.quote);if(!Number.isFinite(price))return;
+    const tickValue={price,epoch:Number(next.epoch)||Date.now()/1000,pipSize:next.pipSize};priceRef.current=tickValue;setTick(tickValue);setFeed("LIVE");
+    const interval=(TIMEFRAMES.find(t=>t.value===timeframe)||TIMEFRAMES[1]).seconds;
+    const bucket=Math.floor(tickValue.epoch/interval)*interval;
+    setCandles(list=>{
+      const last=list[list.length-1];
+      if(!last||last.time!==bucket){const nextCandle={time:bucket,open:price,high:price,low:price,close:price};return [...list,nextCandle].slice(-180);}
+      const updated={...last,high:Math.max(last.high,price),low:Math.min(last.low,price),close:price};
+      return [...list.slice(0,-1),updated];
+    });
+    if(positions.length&&Date.now()-lastMarkRef.current>1500){lastMarkRef.current=Date.now();sandboxEngine.mark({symbol,price}).catch(()=>{});}
+  };
+  const symbolName=symbol.replace(/^frx/,"").replace(/^cry/,"").replace(/^R_/, "Volatility ");
   const openPnl=useMemo(()=>positions.reduce((sum,p)=>sum+Number(p.unrealized_pnl||0),0),[positions]);
-  const runAI=async()=>{if(!tick)return setError("Wait for a verified live price before requesting analysis.");setError("");setAiBusy(true);setAi(null);const recent=candles.slice(-12).map(c=>({open:c.open,high:c.high,low:c.low,close:c.close}));const prompt=`Provide a concise, risk-aware educational market review for ${symbol} on ${timeframe}. Current observed Deriv public-feed price: ${tick.price}. Recent locally collected OHLC candles: ${JSON.stringify(recent)}. State data limitations, describe observed momentum only if enough candles exist, mention volatility/uncertainty, and do not promise returns or give certainty. This is sandbox decision support, not an instruction to trade.`;try{const {data,error:invokeError}=await supabase.functions.invoke("ai-assistant",{body:{mode:"advisor",message:prompt,history:[]}});if(invokeError)throw new Error(data?.error||invokeError.message);if(!data?.ok||!data?.answer)throw new Error(data?.error||"AI service did not return an analysis.");setAi({text:data.answer,symbol,price:tick.price,at:Date.now()});}catch(e){setError("AI analysis unavailable: "+(e.message||"Please retry."));}finally{setAiBusy(false);}};
-  const execute=async side=>{setError("");if(!ai||ai.symbol!==symbol||!tick||Date.now()-ai.at>120000)return setError("Run a fresh AI review for this market before placing a sandbox order.");if(!account)return setError("No authenticated sandbox account was found.");setBusy(true);try{await sandboxEngine.executeOrder({account_id:account.id,symbol,side,quantity:Number(quantity),price:tick.price,stop_loss:null,take_profit:null,idempotency_key:crypto.randomUUID()});await refresh();}catch(e){setError(e.message||"Sandbox order failed.");}finally{setBusy(false);}};
-  const close=async p=>{if(!tick)return setError("Waiting for the current market price before closing.");setBusy(true);setError("");try{await sandboxEngine.closePosition({position_id:p.id,exit_price:tick.price,idempotency_key:crypto.randomUUID()});await refresh();}catch(e){setError(e.message||"Could not close position.");}finally{setBusy(false);}};
+  const runAI=async()=>{
+    if(!tick)return setError("Wait for a live market price before requesting analysis.");
+    setError("");setAiBusy(true);setAi(null);
+    const recent=candles.slice(-12).map(c=>({open:c.open,high:c.high,low:c.low,close:c.close}));
+    const prompt=`Provide a concise, risk-aware educational market review for ${symbol} on ${timeframe}. Current observed Deriv public-feed price: ${tick.price}. Recent OHLC candles: ${JSON.stringify(recent)}. Note data limitations, uncertainty and volatility; do not promise returns. This is sandbox decision support only.`;
+    try{const {data,error:invokeError}=await supabase.functions.invoke("ai-assistant",{body:{mode:"advisor",message:prompt,history:[]}});if(invokeError)throw new Error(data?.error||invokeError.message);if(!data?.ok||!data?.answer)throw new Error(data?.error||"AI service did not return an analysis.");setAi({text:data.answer,symbol,at:Date.now()});}
+    catch(e){setError("AI review unavailable: "+(e.message||"Please retry."));}finally{setAiBusy(false);}
+  };
+  const execute=async side=>{
+    setError("");setNotice("");
+    const size=Number(quantity),sl=stopLoss.trim()===""?null:Number(stopLoss),tp=takeProfit.trim()===""?null:Number(takeProfit);
+    if(!tick)return setError("Waiting for a verified live price.");
+    if(!account)return setError("No authenticated sandbox trading account was found.");
+    if(!Number.isFinite(size)||size<=0)return setError("Enter a position size greater than zero.");
+    if(sl!==null&&(!Number.isFinite(sl)||sl<=0))return setError("Stop loss must be a positive price.");
+    if(tp!==null&&(!Number.isFinite(tp)||tp<=0))return setError("Take profit must be a positive price.");
+    if(sl!==null&&((side==="BUY"&&sl>=tick.price)||(side==="SELL"&&sl<=tick.price)))return setError("Stop loss must be below the current price for Buy and above it for Sell.");
+    if(tp!==null&&((side==="BUY"&&tp<=tick.price)||(side==="SELL"&&tp>=tick.price)))return setError("Take profit must be above the current price for Buy and below it for Sell.");
+    const confirmed=window.confirm(`Confirm SANDBOX ${side} order\nMarket: ${symbolName} (${symbol})\nSize: ${size}\nObserved price: ${fmt(tick.price,8)}\nStop loss: ${sl??"not set"}\nTake profit: ${tp??"not set"}\n\nThis is a virtual order only. No real broker order will be sent.`);
+    if(!confirmed)return;
+    setBusy(true);
+    try{await sandboxEngine.executeOrder({account_id:account.id,symbol,side,quantity:size,price:tick.price,stop_loss:sl,take_profit:tp,idempotency_key:crypto.randomUUID()});setNotice(`Sandbox ${side} order submitted for ${symbolName}.`);await refresh();setActiveTab("positions");}
+    catch(e){setError(e.message||"Sandbox order failed.");}
+    finally{setBusy(false);}
+  };
+  const close=async p=>{
+    const current=priceRef.current;if(!current)return setError("Waiting for the current market price before closing.");
+    if(!window.confirm(`Close sandbox position ${p.symbol} ${p.side} at observed price ${fmt(current.price,8)}?`))return;
+    setBusy(true);setError("");setNotice("");
+    try{await sandboxEngine.closePosition({position_id:p.id,exit_price:current.price,idempotency_key:crypto.randomUUID()});setNotice("Sandbox position closed.");await refresh();}
+    catch(e){setError(e.message||"Could not close position.");}finally{setBusy(false);}
+  };
+
   return <div className="vt-page">
-    <header className="vt-heading"><div><span className="eyebrow">VELTRION • PROFESSIONAL TRADING WORKSTATION</span><h1>Market Terminal</h1><p>Real-time public market quotes, a live candlestick workspace, sandbox execution and AI-assisted review.</p></div><div className="vt-header-actions"><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}><i/> {feed==="LIVE"?"LIVE MARKET DATA":feed}</span><span className="vt-mode-chip">SANDBOX ONLY</span></div></header>
-    <div className="vt-metrics"><div className="vt-metric"><span>Sandbox balance</span><strong>${fmt(account?.available_capital,2)}</strong><small>Available virtual capital</small></div><div className="vt-metric"><span>Selected price</span><strong>{tick?fmt(tick.price,8):"—"}</strong><small>{symbolName} · public feed</small></div><div className="vt-metric"><span>Open positions</span><strong>{positions.length}</strong><small>Supabase sandbox records</small></div><div className="vt-metric"><span>Floating P/L</span><strong className={openPnl>=0?"vt-positive":"vt-negative"}>${fmt(openPnl,2)}</strong><small>Reported by sandbox service</small></div></div>
+    <header className="vt-heading"><div><span className="eyebrow">VELTRION / TRADING WORKSPACE</span><h1>{symbolName} <span className="vt-symbol-code">{symbol}</span></h1><p>Market Watch · candlestick chart · order ticket · open positions. Real-money execution is not available in this terminal.</p></div><div className="vt-header-actions"><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}><i/> {feed==="LIVE"?"LIVE MARKET DATA":feed}</span><span className="vt-mode-chip">SANDBOX ONLY</span></div></header>
+    <div className="vt-metrics"><div className="vt-metric"><span>Available sandbox balance</span><strong>{account?.currency||"USD"} {fmt(account?.available_capital,2)}</strong><small>Virtual account funds</small></div><div className="vt-metric"><span>Bid / observed price</span><strong>{tick?fmt(tick.price,8):"—"}</strong><small>{symbolName} · public feed</small></div><div className="vt-metric"><span>Open positions</span><strong>{positions.length}</strong><small>Sandbox records</small></div><div className="vt-metric"><span>Floating P/L</span><strong className={openPnl>=0?"vt-positive":"vt-negative"}>{account?.currency||"USD"} {fmt(openPnl,2)}</strong><small>Reported by sandbox service</small></div></div>
     <LiveMarketPanel compact selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={onPrice}/>
-    <section className="vt-panel"><div className="vt-panel-head"><div><h2>{symbolName} <span className="vt-symbol-code">{symbol}</span></h2><p>Live tick-built candles <span className="vt-chart-divider">/</span> {candles.length} candles collected this session</p></div><div className="vt-timeframes">{["M1","M5","M15","H1"].map(t=><button key={t} className={timeframe===t?"active":""} onClick={()=>setTimeframe(t)}>{t}</button>)}</div></div><CandleChart candles={candles} symbol={symbolName} price={tick?.price}/><div className="vt-chart-footer"><span><i className="vt-legend-candle up"/> Bullish <i className="vt-legend-candle down"/> Bearish</span><span>Candles form while this terminal is open. Historical data is not yet loaded.</span></div></section>
-    <div className="vt-lower-grid"><section className="vt-panel"><div className="vt-section-title"><div><h2>AI Market Review</h2><p>Required before placing sandbox orders</p></div><span className="vt-ai-tag">ADVISORY</span></div><button className="vt-ai-button" onClick={runAI} disabled={aiBusy||!tick}>{aiBusy?"ANALYZING MARKET…":"ANALYZE SELECTED MARKET"}</button>{ai&&ai.symbol===symbol&&<div className="vt-ai-result"><div className="vt-ai-meta">Reviewed {new Date(ai.at).toLocaleTimeString()} · price {fmt(ai.price,8)}</div><p>{ai.text}</p></div>}<div className="vt-disclaimer">AI output is informational, can be wrong, and does not guarantee results. It never executes trades.</div></section>
-    <section className="vt-panel"><div className="vt-section-title"><div><h2>Sandbox Order Ticket</h2><p>Virtual execution only · no broker order is sent</p></div></div><label className="vt-label">Market<select value={symbol} onChange={e=>setSymbol(e.target.value)}>{SYMBOLS.map(s=><option key={s.symbol} value={s.symbol}>{s.name} ({s.symbol})</option>)}</select></label><label className="vt-label">Position size (lots)<input type="number" min="0.01" step="0.01" value={quantity} onChange={e=>setQuantity(e.target.value)}/></label><div className="vt-price-row"><span>Current observed price</span><strong>{tick?fmt(tick.price,8):"Waiting for feed…"}</strong></div><div className="vt-order-actions"><button className="vt-buy" disabled={busy||!tick||!ai||ai.symbol!==symbol||Date.now()-ai.at>120000} onClick={()=>execute("BUY")}>BUY</button><button className="vt-sell" disabled={busy||!tick||!ai||ai.symbol!==symbol||Date.now()-ai.at>120000} onClick={()=>execute("SELL")}>SELL</button></div><small className="vt-gate-note">{ai&&ai.symbol===symbol?"AI review available; order requires your explicit confirmation tap.":"Run AI analysis first to unlock sandbox order controls."}</small></section></div>
-    <section className="vt-panel"><div className="vt-section-title"><div><h2>Open Positions</h2><p>Automatically refreshed from the sandbox service</p></div><strong>{positions.length}</strong></div>{!positions.length?<div className="vt-empty">No open sandbox positions.</div>:<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Market</th><th>Side</th><th>Quantity</th><th>Entry</th><th>Current</th><th>Unrealized P/L</th><th>Action</th></tr></thead><tbody>{positions.map(p=><tr key={p.id}><td>{p.symbol}</td><td className={String(p.side).toUpperCase()==="BUY"?"vt-positive":"vt-negative"}>{p.side}</td><td>{p.quantity}</td><td>{fmt(Number(p.entry_price),8)}</td><td>{fmt(Number(p.current_price),8)}</td><td className={Number(p.unrealized_pnl)>=0?"vt-positive":"vt-negative"}>{fmt(Number(p.unrealized_pnl),2)}</td><td><button className="vt-close" disabled={busy||!tick} onClick={()=>close(p)}>Close</button></td></tr>)}</tbody></table></div>}</section>
-    {error&&<div className="vt-error" role="alert">{error}</div>}
+    <section className="vt-panel vt-chart-panel"><div className="vt-panel-head"><div><h2>Price Chart <span className="vt-symbol-code">{symbol}</span></h2><p>{candles.length} candles · Deriv historical OHLC + live tick updates</p></div><div className="vt-timeframes">{TIMEFRAMES.map(t=><button key={t.value} className={timeframe===t.value?"active":""} onClick={()=>setTimeframe(t.value)}>{t.label}</button>)}</div></div><CandleChart candles={candles} symbol={symbolName} price={tick?.price}/><div className="vt-chart-footer"><span><i className="vt-legend-candle up"/> Bullish <i className="vt-legend-candle down"/> Bearish</span><span>Historical data is loaded from Deriv when available; the latest candle updates from the public tick stream.</span></div></section>
+    <div className="vt-lower-grid">
+      <section className="vt-panel"><div className="vt-section-title"><div><h2>Order Ticket</h2><p>Market order · virtual execution only</p></div><span className="vt-ai-tag">SANDBOX</span></div>
+        <label className="vt-label">Market<select value={symbol} onChange={e=>setSymbol(e.target.value)}><option value={symbol}>{symbolName} ({symbol})</option></select></label>
+        <div className="vt-order-price"><div><span>Observed price</span><strong>{tick?fmt(tick.price,8):"Waiting for feed…"}</strong></div><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}>{feed==="LIVE"?"LIVE":"WAITING"}</span></div>
+        <label className="vt-label">Position size<input type="number" min="0.01" step="0.01" inputMode="decimal" value={quantity} onChange={e=>setQuantity(e.target.value)}/></label>
+        <div className="vt-risk-fields"><label className="vt-label">Stop loss <input type="number" min="0" step="any" inputMode="decimal" placeholder="Optional price" value={stopLoss} onChange={e=>setStopLoss(e.target.value)}/></label><label className="vt-label">Take profit <input type="number" min="0" step="any" inputMode="decimal" placeholder="Optional price" value={takeProfit} onChange={e=>setTakeProfit(e.target.value)}/></label></div>
+        <div className="vt-order-actions"><button className="vt-buy" disabled={busy||!tick||!account} onClick={()=>execute("BUY")}>{busy?"PROCESSING…":"BUY / LONG"}</button><button className="vt-sell" disabled={busy||!tick||!account} onClick={()=>execute("SELL")}>{busy?"PROCESSING…":"SELL / SHORT"}</button></div>
+        <small className="vt-gate-note">Orders require a confirmation tap and are sent only to the VELTRION sandbox service. No real money is used.</small>
+      </section>
+      <section className="vt-panel"><div className="vt-section-title"><div><h2>AI Market Review</h2><p>Optional educational context; not a trade signal</p></div><span className="vt-ai-tag">ADVISORY</span></div><button className="vt-ai-button" onClick={runAI} disabled={aiBusy||!tick}>{aiBusy?"ANALYZING…":"REVIEW THIS MARKET"}</button>{ai&&ai.symbol===symbol&&<div className="vt-ai-result"><div className="vt-ai-meta">Reviewed {new Date(ai.at).toLocaleTimeString()}</div><p>{ai.text}</p></div>}<div className="vt-disclaimer">AI output can be wrong and never places, changes or closes an order.</div></section>
+    </div>
+    <section className="vt-panel"><div className="vt-section-title"><div><h2>Trading Activity</h2><p>Positions and orders recorded by the sandbox service</p></div><div className="vt-activity-tabs"><button className={activeTab==="positions"?"active":""} onClick={()=>setActiveTab("positions")}>Positions ({positions.length})</button><button className={activeTab==="orders"?"active":""} onClick={()=>setActiveTab("orders")}>Orders ({orders.length})</button></div></div>
+      {activeTab==="positions"?(positions.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Market</th><th>Side</th><th>Size</th><th>Entry</th><th>Current</th><th>Stop loss</th><th>Take profit</th><th>Floating P/L</th><th>Action</th></tr></thead><tbody>{positions.map(p=><tr key={p.id}><td>{p.symbol}</td><td className={String(p.side).toUpperCase()==="BUY"?"vt-positive":"vt-negative"}>{p.side}</td><td>{p.quantity}</td><td>{fmt(Number(p.entry_price),8)}</td><td>{fmt(Number(p.current_price),8)}</td><td>{fmt(Number(p.stop_loss),8)}</td><td>{fmt(Number(p.take_profit),8)}</td><td className={Number(p.unrealized_pnl)>=0?"vt-positive":"vt-negative"}>{fmt(Number(p.unrealized_pnl),2)}</td><td><button className="vt-close" disabled={busy||!tick} onClick={()=>close(p)}>Close</button></td></tr>)}</tbody></table></div>:<div className="vt-empty">No open sandbox positions. Confirm a Buy or Sell sandbox order to see it here.</div>):(orders.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Time</th><th>Market</th><th>Side</th><th>Size</th><th>Price</th><th>Status</th><th>Realized P/L</th></tr></thead><tbody>{orders.map(o=><tr key={o.id}><td>{o.created_at?new Date(o.created_at).toLocaleString():"—"}</td><td>{o.symbol}</td><td>{o.side}</td><td>{o.quantity}</td><td>{fmt(Number(o.price),8)}</td><td>{o.status||"—"}</td><td>{o.realized_pnl==null?"—":fmt(Number(o.realized_pnl),2)}</td></tr>)}</tbody></table></div>:<div className="vt-empty">No sandbox order records were returned.</div>)}
+    </section>
+    {notice&&<div className="vt-success" role="status">{notice}</div>}{error&&<div className="vt-error" role="alert">{error}</div>}
   </div>;
 }

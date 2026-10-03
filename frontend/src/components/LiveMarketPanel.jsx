@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 const DERIV_PUBLIC_ENDPOINTS = ["wss:" + "//api.derivws.com/trading/v1/options/ws/public", "wss:" + "//ws.binaryws.com/websockets/v3"];
 
-export default function LiveMarketPanel({ compact = false, selectedSymbol = null, onSymbolChange, onPriceChange }) {
+export default function LiveMarketPanel({ compact = false, selectedSymbol = null, onSymbolChange, onPriceChange, onOpenTerminal }) {
   const [markets, setMarkets] = useState([]);
   const [ticks, setTicks] = useState({});
   const [connected, setConnected] = useState(false);
@@ -12,9 +12,12 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [marketFilter, setMarketFilter] = useState("ALL");
+  const [focusedSymbol, setFocusedSymbol] = useState(selectedSymbol || "");
   const selectedSymbolRef = useRef(selectedSymbol);
   const socketRef = useRef(null);
   const onPriceChangeRef = useRef(onPriceChange);
+  useEffect(() => { if (selectedSymbol) setFocusedSymbol(selectedSymbol); }, [selectedSymbol]);
+  useEffect(() => { if (socketRef.current?.readyState === WebSocket.OPEN && focusedSymbol) socketRef.current.send(JSON.stringify({ ticks: focusedSymbol, subscribe: 1, req_id: 9100 })); }, [focusedSymbol]);
 
   useEffect(() => {
     onPriceChangeRef.current = onPriceChange;
@@ -129,6 +132,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             symbolsLoaded = true;
             clearConnectionTimeout();
             setMarkets(unique);
+            setFocusedSymbol(current => current || unique[0]?.symbol || "");
             setLoading(false);
             setDiscoveryComplete(true);
             setConnected(true);
@@ -210,6 +214,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       return matchesCategory && matchesQuery;
     });
   }, [markets, marketFilter, query]);
+  const focusedMarket = markets.find(item => item.symbol === focusedSymbol);
 
   return <section className="panel market-panel">
     <div className="panel-title market-title">
@@ -227,7 +232,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
     <div className={compact ? "market-grid compact" : "market-grid"}>
       {visibleMarkets.map(item => {
         const tick = ticks[item.symbol];
-        return <button key={item.symbol} className={selectedSymbol === item.symbol ? "market-card selected" : "market-card"} onClick={() => onSymbolChange?.(item.symbol)} title={item.name}>
+        return <button key={item.symbol} className={(selectedSymbol === item.symbol || focusedSymbol === item.symbol) ? "market-card selected" : "market-card"} onClick={() => { setFocusedSymbol(item.symbol); onSymbolChange?.(item.symbol); }} title={item.name}>
           <span>{item.name}</span>
           <small>{item.symbol} • {item.market}</small>
           <strong>{tick && Number.isFinite(tick.quote) ? tick.quote.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "—"}</strong>
@@ -235,7 +240,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         </button>;
       })}
     </div>
-    {!loading && discoveryComplete && visibleMarkets.length === 0 && <div className="market-empty">No active Deriv symbols match this filter.</div>}
+    {!compact && focusedMarket && <div className="market-detail"><div className="market-detail-heading"><div><span className="market-detail-kicker">SELECTED MARKET</span><h3>{focusedMarket.name}</h3><p>{focusedMarket.symbol} · {focusedMarket.market}</p></div><div className="market-detail-quote"><small>Latest public quote</small><strong>{ticks[focusedMarket.symbol] && Number.isFinite(ticks[focusedMarket.symbol].quote) ? ticks[focusedMarket.symbol].quote.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "Waiting for quote…"}</strong><small>{ticks[focusedMarket.symbol] ? new Date(ticks[focusedMarket.symbol].epoch * 1000).toLocaleTimeString() : "Feed initializing"}</small></div></div><div className="market-detail-actions"><button className="market-open-terminal" onClick={() => onOpenTerminal?.(focusedMarket.symbol)}>Open Web Terminal <span>→</span></button><button className="market-mt5-placeholder" disabled title="MT5 integration is not available yet">MT5 Terminal · Coming later</button></div><p className="market-detail-note">Choose a market here, review its current public price, then open the terminal to view candles and place sandbox orders. Selecting a market does not place an order.</p></div>}\n    {!loading && discoveryComplete && visibleMarkets.length === 0 && <div className="market-empty">No active Deriv symbols match this filter.</div>}
     {!loading && !discoveryComplete && markets.length === 0 && <div className="market-empty">Market list is unavailable until the Deriv connection succeeds. The diagnostic above explains the latest failure.</div>}
     <div className="market-footnote">Dynamically discovered from Deriv <code>active_symbols</code>. Public live market data only; trading credentials remain server-side.</div>
   </section>;
