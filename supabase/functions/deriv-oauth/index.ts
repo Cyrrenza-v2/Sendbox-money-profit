@@ -105,9 +105,12 @@ async function callback(code: string, state: string) {
   }, { onConflict: "user_id" });
 
   for (const a of real) {
+    const derivAccountId = String(a.account_id || "").trim();
+    if (!derivAccountId) continue;
+
     await admin.from("deriv_accounts").upsert({
       user_id: uid,
-      deriv_account_id: String(a.account_id),
+      deriv_account_id: derivAccountId,
       account_type: "real",
       currency: a.currency || null,
       status: "connected",
@@ -115,6 +118,22 @@ async function callback(code: string, state: string) {
       last_synced_at: now,
       raw: a
     }, { onConflict: "user_id,deriv_account_id" });
+
+    // Mirror only the authenticated real account returned by Deriv.
+    // Keep the internal account inactive and emergency-stopped.
+    const parsedBalance = Number(a.balance);
+    const verifiedBalance = Number.isFinite(parsedBalance) && parsedBalance >= 0 ? parsedBalance : 0;
+    const { error: accountError } = await admin.from("real_trading_accounts").upsert({
+      user_id: uid,
+      deriv_account_id: derivAccountId,
+      currency: a.currency || "USD",
+      balance: verifiedBalance,
+      equity: verifiedBalance,
+      is_active: false,
+      emergency_stopped: true,
+      updated_at: now
+    }, { onConflict: "user_id,deriv_account_id" });
+    if (accountError) throw accountError;
   }
 
   await admin.from("deriv_connections").upsert({
