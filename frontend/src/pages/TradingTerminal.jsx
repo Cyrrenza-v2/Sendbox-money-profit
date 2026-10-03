@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 import LiveMarketPanel from "../components/LiveMarketPanel";
 import { sandboxEngine } from "../services/sandboxEngine";
@@ -29,6 +29,7 @@ function readCandles(message) {
 
 export default function TradingTerminal() {
   const [searchParams]=useSearchParams();
+  const navigate=useNavigate();
   const [symbol,setSymbol]=useState(()=>searchParams.get("symbol")||"frxEURUSD");
   const [tick,setTick]=useState(null),[feed,setFeed]=useState("WAITING"),[candles,setCandles]=useState([]),[timeframe,setTimeframe]=useState("M5");
   const [account,setAccount]=useState(null),[positions,setPositions]=useState([]),[orders,setOrders]=useState([]);
@@ -126,7 +127,6 @@ export default function TradingTerminal() {
     const size=Number(quantity),sl=stopLoss.trim()===""?null:Number(stopLoss),tp=takeProfit.trim()===""?null:Number(takeProfit);
     if(!tick)return setError("Waiting for a verified live price.");
     if(!account)return setError("No authenticated sandbox trading account was found.");
-    if(!ai||ai.symbol!==symbol||ai.timeframe!==timeframe)return setError("Complete the AI market review for the current market and timeframe before confirming a sandbox order.");
     if(!Number.isFinite(size)||size<=0)return setError("Enter a position size greater than zero.");
     if(sl!==null&&(!Number.isFinite(sl)||sl<=0))return setError("Stop loss must be a positive price.");
     if(tp!==null&&(!Number.isFinite(tp)||tp<=0))return setError("Take profit must be a positive price.");
@@ -148,7 +148,7 @@ export default function TradingTerminal() {
   };
 
   return <div className="vt-page">
-    <header className="vt-heading"><div><span className="eyebrow">VELTRION / TRADING WORKSPACE</span><h1>{symbolName} <span className="vt-symbol-code">{symbol}</span></h1><p>Market Watch · candlestick chart · order ticket · open positions. Real-money execution is not available in this terminal.</p></div><div className="vt-header-actions"><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}><i/> {feed==="LIVE"?"LIVE MARKET DATA":feed}</span><span className="vt-mode-chip">SANDBOX ONLY</span></div></header>
+    <header className="vt-heading"><div><span className="eyebrow">VELTRION / TRADING WORKSPACE</span><h1>{symbolName} <span className="vt-symbol-code">{symbol}</span></h1><p>Market Watch · candlestick chart · order ticket · open positions. Real-money execution is not available in this terminal.</p></div><div className="vt-header-actions"><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}><i/> {feed==="LIVE"?"LIVE MARKET DATA":feed}</span><span className="vt-mode-chip">SANDBOX ONLY</span><button className="vt-ai-button" onClick={()=>navigate(`/real-trading?symbol=${encodeURIComponent(symbol)}`)}>REAL TERMINAL</button></div></header>
     <div className="vt-metrics"><div className="vt-metric"><span>Available sandbox balance</span><strong>{account?.currency||"USD"} {fmt(account?.available_capital,2)}</strong><small>Virtual account funds</small></div><div className="vt-metric"><span>Bid / observed price</span><strong>{tick?fmt(tick.price,8):"—"}</strong><small>{symbolName} · public feed</small></div><div className="vt-metric"><span>Open positions</span><strong>{positions.length}</strong><small>Sandbox records</small></div><div className="vt-metric"><span>Floating P/L</span><strong className={openPnl>=0?"vt-positive":"vt-negative"}>{account?.currency||"USD"} {fmt(openPnl,2)}</strong><small>Reported by sandbox service</small></div></div>
     <LiveMarketPanel compact selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={onPrice}/>
     <section className="vt-panel vt-chart-panel"><div className="vt-panel-head"><div><h2>Price Chart <span className="vt-symbol-code">{symbol}</span></h2><p>{candles.length} candles · Deriv historical OHLC + live tick updates</p></div><div className="vt-timeframes">{TIMEFRAMES.map(t=><button key={t.value} className={timeframe===t.value?"active":""} onClick={()=>setTimeframe(t.value)}>{t.label}</button>)}</div></div><CandleChart candles={candles} symbol={symbolName} price={tick?.price}/><div className="vt-chart-footer"><span><i className="vt-legend-candle up"/> Bullish <i className="vt-legend-candle down"/> Bearish</span><span>Historical data is loaded from Deriv when available; the latest candle updates from the public tick stream.</span></div></section>
@@ -159,7 +159,7 @@ export default function TradingTerminal() {
         <label className="vt-label">Position size<input type="number" min="0.01" step="0.01" inputMode="decimal" value={quantity} onChange={e=>setQuantity(e.target.value)}/></label>
         <div className="vt-risk-fields"><label className="vt-label">Stop loss <input type="number" min="0" step="any" inputMode="decimal" placeholder="Optional price" value={stopLoss} onChange={e=>setStopLoss(e.target.value)}/></label><label className="vt-label">Take profit <input type="number" min="0" step="any" inputMode="decimal" placeholder="Optional price" value={takeProfit} onChange={e=>setTakeProfit(e.target.value)}/></label></div>
         <div className="vt-order-actions"><button className="vt-buy" disabled={busy||!tick||!account} onClick={()=>execute("BUY")}>{busy?"PROCESSING…":"BUY / LONG"}</button><button className="vt-sell" disabled={busy||!tick||!account} onClick={()=>execute("SELL")}>{busy?"PROCESSING…":"SELL / SHORT"}</button></div>
-        <small className="vt-gate-note">Orders require a current AI review plus a confirmation tap. They are sent only to the VELTRION sandbox service. No real money is used.</small>
+        <small className="vt-gate-note">Orders require a current live price and a confirmation tap. AI review is optional decision-support context and never authorizes or executes an order. Orders are sent only to the VELTRION sandbox service.</small>
       </section>
       <section className="vt-panel"><div className="vt-section-title"><div><h2>AI Market Review</h2><p>Optional educational context; not a trade signal</p></div><span className="vt-ai-tag">ADVISORY</span></div><button className="vt-ai-button" onClick={runAI} disabled={aiBusy||e2eBusy||!tick}>{aiBusy?"ANALYZING…":"REVIEW THIS MARKET"}</button><button className="vt-ai-button" onClick={runFullE2E} disabled={aiBusy||e2eBusy||busy||!tick||!account}>{e2eBusy?"RUNNING FULL E2E…":"RUN FULL SANDBOX E2E"}</button>{ai&&ai.symbol===symbol&&<div className="vt-ai-result"><div className="vt-ai-meta">Reviewed {new Date(ai.at).toLocaleTimeString()} · {ai.symbol} · {ai.timeframe} · observed {fmt(ai.price,8)}</div><p>{ai.text}</p></div>}<div className="vt-disclaimer">AI output can be wrong and never places, changes or closes an order.</div></section>
     </div>
