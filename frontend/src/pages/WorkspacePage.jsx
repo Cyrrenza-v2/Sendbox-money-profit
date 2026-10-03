@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 import LiveMarketPanel from "../components/LiveMarketPanel";
 const configBySection = {
@@ -17,6 +18,7 @@ const configBySection = {
  alerts:{intro:"Recent system and operational alerts.",source:"audit_logs"}
 };
 export default function WorkspacePage({title,section}){
+ const navigate=useNavigate();
  const [state,setState]=useState({loading:true,error:"",data:null});
  const config=configBySection[section]||{intro:"Live account information from Supabase.",source:"Supabase"};
  useEffect(()=>{if(section==="markets"){setState({loading:false,error:"",data:null});return;}let alive=true;async function load(){setState({loading:true,error:"",data:null});try{
@@ -50,7 +52,7 @@ export default function WorkspacePage({title,section}){
  if(error)throw error;if(alive)setState({loading:false,error:"",data});
  }catch(e){if(alive)setState({loading:false,error:e?.message||"Unable to load backend data.",data:null});}}
  load();return()=>{alive=false};},[section]);
- if(section==="markets") return <div className="vel-page"><div className="vel-page-heading"><div><div className="vel-eyebrow">VELTRION / MARKET DATA</div><h1>{title}</h1><p>All currently active Deriv instruments with live public tick prices. This screen displays market data only and does not execute trades.</p></div><span className="vel-data-source">SOURCE · DERIV LIVE FEED</span></div><LiveMarketPanel /></div>;
+ if(section==="markets") return <div className="vel-page"><div className="vel-page-heading"><div><div className="vel-eyebrow">VELTRION / MARKET DATA</div><h1>{title}</h1><p>All currently active Deriv instruments with live public tick prices. This screen displays market data only and does not execute trades.</p></div><span className="vel-data-source">SOURCE · DERIV LIVE FEED</span></div><LiveMarketPanel onSymbolChange={symbol=>navigate(`/app/trading/terminal?symbol=${encodeURIComponent(symbol)}`)} /></div>;
  if(section==="real"&&!state.loading&&!state.error){
   const account=state.data?.account||null;
   const configuration=state.data?.configuration||null;
