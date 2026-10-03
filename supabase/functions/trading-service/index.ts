@@ -542,8 +542,12 @@ Deno.serve(async req => {
     return json({ ok: true, data: result });
   } catch (e) {
     const message = e instanceof Error ? e.message : "REAL_TRADING_REQUEST_FAILED";
-    const status = message === "REAL_TRADING_DISABLED" || message === "REAL_ACCOUNT_INACTIVE" ||
-      message === "REAL_ACCOUNT_EMERGENCY_STOPPED" || message === "DERIV_TRADING_KILL_SWITCH" ? 423 : 400;
+    const status = [
+      "REAL_TRADING_DISABLED", "REAL_ACCOUNT_INACTIVE", "REAL_ACCOUNT_EMERGENCY_STOPPED",
+      "REAL_ACCOUNT_NOT_FOUND", "EMERGENCY_STOP_ACTIVE_OR_UNCONFIGURED",
+      "REAL_TRADING_CONTROL_DISABLED", "DERIV_TRADING_KILL_SWITCH",
+      "DERIV_TRADING_KILL_SWITCH_MISSING", "TRADING_SAFETY_CONTROLS_UNAVAILABLE"
+    ].includes(message) ? 423 : 400;
     return json({ ok: false, error: message }, status);
   }
 });
