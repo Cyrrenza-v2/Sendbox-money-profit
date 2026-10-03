@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 import LiveMarketPanel from "../components/LiveMarketPanel";
 import { sandboxEngine } from "../services/sandboxEngine";
@@ -19,8 +20,10 @@ function CandleChart({ candles, symbol, price }) {
 }
 
 export default function TradingTerminal() {
-  const [symbol,setSymbol]=useState("frxEURUSD"), [tick,setTick]=useState(null), [feed,setFeed]=useState("WAITING"), [candles,setCandles]=useState([]), [timeframe,setTimeframe]=useState("M5"), [account,setAccount]=useState(null), [positions,setPositions]=useState([]), [quantity,setQuantity]=useState("0.01"), [ai,setAi]=useState(null), [aiBusy,setAiBusy]=useState(false), [busy,setBusy]=useState(false), [error,setError]=useState("");
+  const [searchParams] = useSearchParams();
+  const [symbol,setSymbol]=useState(()=>searchParams.get("symbol") || "frxEURUSD"), [tick,setTick]=useState(null), [feed,setFeed]=useState("WAITING"), [candles,setCandles]=useState([]), [timeframe,setTimeframe]=useState("M5"), [account,setAccount]=useState(null), [positions,setPositions]=useState([]), [quantity,setQuantity]=useState("0.01"), [ai,setAi]=useState(null), [aiBusy,setAiBusy]=useState(false), [busy,setBusy]=useState(false), [error,setError]=useState("");
   const latestCandleRef=useRef(null); const lastMarkRef=useRef(0);
+  useEffect(()=>{const requested=searchParams.get("symbol");if(requested)setSymbol(requested);},[searchParams]);
   const refresh=async()=>{const r=await sandboxEngine.snapshot();setAccount(r.data?.accounts?.[0]||null);setPositions(r.data?.positions||[]);};
   useEffect(()=>{refresh().catch(e=>setError(e.message));const timer=setInterval(()=>refresh().catch(()=>{}),5000);return()=>clearInterval(timer);},[]);
   useEffect(()=>{setCandles([]);setTick(null);setAi(null);latestCandleRef.current=null;},[symbol,timeframe]);
