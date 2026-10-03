@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
-const DERIV_APP_ID = import.meta.env.VITE_DERIV_APP_ID || "1089";
-const DERIV_PUBLIC_ENDPOINTS = [
-  `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(DERIV_APP_ID)}`,
-  `wss://ws.binaryws.com/websockets/v3?app_id=${encodeURIComponent(DERIV_APP_ID)}`
-];
+
+const DERIV_PUBLIC_ENDPOINTS = [];
 
 export default function LiveMarketPanel({ compact = false, selectedSymbol = null, onSymbolChange }) {
   const [markets, setMarkets] = useState([]);
