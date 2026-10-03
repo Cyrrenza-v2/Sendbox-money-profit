@@ -49,7 +49,7 @@ async function writeAudit(req: Request, model: string, mode: string, message: st
     return;
   }
 
-  const response = await fetch(`${supabaseUrl}/rest/v1/ai_analysis`, {
+  const auditId = crypto.randomUUID();\n  const response = await fetch(`${supabaseUrl}/rest/v1/ai_analysis`, {
     method: "POST",
     headers: {
       apikey: serviceKey,
