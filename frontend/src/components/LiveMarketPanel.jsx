@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 
-const DERIV_PUBLIC_ENDPOINTS = [];
+const DERIV_PUBLIC_ENDPOINTS = ["wss:" + "//api.derivws.com/trading/v1/options/ws/public", "wss:" + "//ws.binaryws.com/websockets/v3"];
 
 export default function LiveMarketPanel({ compact = false, selectedSymbol = null, onSymbolChange }) {
   const [markets, setMarkets] = useState([]);
