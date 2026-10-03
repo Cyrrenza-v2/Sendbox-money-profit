@@ -41,7 +41,7 @@ export default function RealTradingTerminal() {
       if (error) throw error;
       setEmergencyStopped(false);
       setArmed(true);
-      setMessage("Deriv account verified. Trading controls are armed, but live execution remains server-locked until the real execution service is explicitly enabled.");
+      setMessage("Deriv account verified. Trading controls are armed.");
     } catch (error) {
       setMessage(error?.message || "REAL_MODE_ENABLE_FAILED");
     }
@@ -128,7 +128,7 @@ export default function RealTradingTerminal() {
             <button className="button danger" disabled={emergencyStopped} onClick={() => requestOrder("SELL")}>VALIDATE SELL / PUT</button>
           </div>
           {emergencyStopped && <div className="stop-notice">Global emergency stop is active. New trading requests are blocked.</div>}
-          {message && <div className="error-panel">{message}</div>}
+          {message && <div className={message.startsWith("Deriv account verified") ? "panel" : "error-panel"}>{message}</div>}
         </section>}
       </main>
     </div>
