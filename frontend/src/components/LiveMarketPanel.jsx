@@ -164,12 +164,17 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
                 raw: item,
                 updated_at: syncedAt
               }));
-              const { error: syncError } = await supabase
+              supabase
                 .from("market_symbols")
-                .upsert(rows, { onConflict: "symbol" });
-              if (syncError) {
-                console.warn("Supabase market catalog sync failed:", syncError.message);
-              }
+                .upsert(rows, { onConflict: "symbol" })
+                .then(({ error: syncError }) => {
+                  if (syncError) {
+                    console.warn("Supabase market catalog sync failed:", syncError.message);
+                  }
+                })
+                .catch(syncError => {
+                  console.warn("Supabase market catalog sync failed:", syncError?.message || syncError);
+                });
             }
 
             // Queue a modest number of tick subscriptions to avoid flooding the public socket.
