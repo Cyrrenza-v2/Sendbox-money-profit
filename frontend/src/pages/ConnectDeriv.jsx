@@ -7,6 +7,9 @@ export default function ConnectDeriv() {
   const [account, setAccount] = useState(null);
   const [error, setError] = useState("");
   const [sessionStatus, setSessionStatus] = useState("NOT VERIFIED");
+  const [balanceBusy, setBalanceBusy] = useState(false);
+  const [balanceError, setBalanceError] = useState("");
+  const [balanceResult, setBalanceResult] = useState(null);
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
@@ -117,6 +120,41 @@ export default function ConnectDeriv() {
     }
   };
 
+  const syncLiveBalance = async () => {
+    setBalanceBusy(true);
+    setBalanceError("");
+    setBalanceResult(null);
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!session?.access_token) throw new Error("Sign in to VELTRION first.");
+
+      const { data, error: invokeError } = await supabase.functions.invoke("trading-service", {
+        body: { operation: "balance_reconcile" },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (invokeError) {
+        let detail = invokeError.message || "Live balance reconciliation failed.";
+        try {
+          const response = invokeError.context;
+          if (response?.clone) {
+            const payload = await response.clone().json();
+            detail = payload?.error || payload?.message || detail;
+          }
+        } catch {}
+        throw new Error(detail);
+      }
+      if (!data?.ok || !data?.data?.snapshot_saved) {
+        throw new Error(data?.error || "Deriv live balance was not reconciled.");
+      }
+      setBalanceResult(data.data);
+    } catch (e) {
+      setBalanceError(e?.message || "Live balance reconciliation failed.");
+    } finally {
+      setBalanceBusy(false);
+    }
+  };
+
   const connect = async () => {
     setError("");
     setStatus("STARTING OAUTH");
@@ -202,6 +240,25 @@ export default function ConnectDeriv() {
         </div>
         <button className="primary" onClick={verifyRealSession} disabled={sessionStatus === "CHECKING SESSION" || sessionStatus === "ISSUING SESSION" || sessionStatus === "CONNECTING"}>
           {sessionStatus === "CHECKING SESSION" || sessionStatus === "ISSUING SESSION" || sessionStatus === "CONNECTING" ? "VERIFYING REAL CHANNEL…" : "VERIFY REAL TRADING CHANNEL"}
+        </button>
+        <div className="success-box" style={{ marginTop: 16 }}>
+          <b>LIVE BALANCE RECONCILIATION</b>
+          <p style={{ margin: "6px 0 0" }}>
+            Reads the authenticated Deriv balance and records a timestamped snapshot. This is a read-only check; it does not place trades or enable trading.
+          </p>
+          {balanceError && <p className="error" role="status">{balanceError}</p>}
+          {balanceResult && (
+            <div style={{ marginTop: 10 }}>
+              <p><b>Live balance:</b> {Number(balanceResult.balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {balanceResult.currency}</p>
+              <p><b>Previous stored balance:</b> {Number(balanceResult.previous_stored_balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {balanceResult.currency}</p>
+              <p><b>Difference reconciled:</b> {Number(balanceResult.balance_difference).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {balanceResult.currency}</p>
+              <p><b>Equity:</b> {balanceResult.equity_verified ? `${Number(balanceResult.equity).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${balanceResult.currency} (verified with no open contracts)` : "Not independently verified; stored value preserved."}</p>
+              <small>Snapshot saved {new Date(balanceResult.observed_at).toLocaleString()} · {balanceResult.source}</small>
+            </div>
+          )}
+        </div>
+        <button className="primary" onClick={syncLiveBalance} disabled={balanceBusy}>
+          {balanceBusy ? "RECONCILING LIVE BALANCE…" : "SYNC LIVE BALANCE"}
         </button>
         <button className="secondary-btn" onClick={connect} disabled={status === "STARTING OAUTH"}>
           {status === "STARTING OAUTH" ? "CONNECTING…" : "CONNECT / REFRESH DERIV"}
