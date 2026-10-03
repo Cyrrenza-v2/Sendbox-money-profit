@@ -31,7 +31,8 @@ export default function RealMT5Terminal(){
  const [params]=useSearchParams();
  const initialSymbol=params.get("symbol")||"1HZ100V";
  const [side,setSide]=useState(false),[symbol,setSymbol]=useState(initialSymbol),[price,setPrice]=useState(null),[feed,setFeed]=useState("WAITING");
- const [candles,setCandles]=useState([]),[ticks,setTicks]=useState([]),[tf,setTf]=useState(300),[account,setAccount]=useState(null),[portfolio,setPortfolio]=useState([]);\n const historySocketRef=useRef(null);
+ const [candles,setCandles]=useState([]),[ticks,setTicks]=useState([]),[tf,setTf]=useState(300),[account,setAccount]=useState(null),[portfolio,setPortfolio]=useState([]);
+ const historySocketRef=useRef(null);
  const [stake,setStake]=useState("10"),[growth,setGrowth]=useState("1"),[busy,setBusy]=useState(false),[msg,setMsg]=useState(""),[error,setError]=useState("");
  const [selectedContract,setSelectedContract]=useState(null),[wallets,setWallets]=useState([]),[transferAmount,setTransferAmount]=useState(""),[transferDir,setTransferDir]=useState("to_wallet"),[transferBusy,setTransferBusy]=useState(false);
  const refresh=async()=>{try{const s=await invoke(fn,{operation:"real_snapshot"});setAccount(s||null);setPortfolio(s?.portfolio?.contracts||[]);}catch(e){setError(e.message||"REAL_ACCOUNT_SYNC_FAILED")}};
