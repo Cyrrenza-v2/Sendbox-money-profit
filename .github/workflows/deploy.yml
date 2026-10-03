@@ -4,6 +4,7 @@ name: Deploy VELTRION to GitHub Pages
 # Explicit deployment requested for the verified terminal live-feed fix.
 # Manual deployment trigger: 2026-10-03 — user requested deploy and verify.
 
+# GitHub Pages deployment verification trigger: 2026-10-03.
 on:
   push:
     branches:
