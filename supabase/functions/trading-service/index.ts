@@ -301,12 +301,51 @@ async function handle(userId: string, body: any) {
     const previousEquity = Number(account.equity || 0);
     const balanceDifference = Number((liveBalance - previousBalance).toFixed(2));
 
-    const { data: derivAccount, error: derivAccountError } = await db.from("deriv_accounts")
+    // Keep the provider-account identity synchronized before writing snapshots.
+    // The OAuth connection can be valid even when the normalized deriv_accounts row
+    // has not yet been created. Create it idempotently so reconciliation does not
+    // remain stuck in an "awaiting synchronization" state.
+    let { data: derivAccount, error: derivAccountError } = await db.from("deriv_accounts")
       .select("id")
       .eq("user_id", userId)
       .eq("deriv_account_id", account.deriv_account_id)
       .maybeSingle();
     if (derivAccountError) throw derivAccountError;
+
+    if (!derivAccount) {
+      const { data: createdDerivAccount, error: createDerivAccountError } = await db
+        .from("deriv_accounts")
+        .insert({
+          user_id: userId,
+          deriv_account_id: account.deriv_account_id,
+          account_type: "real",
+          currency,
+          status: "connected",
+          scopes: ["read", "trade"],
+          last_synced_at: observedAt,
+          raw: {
+            source: "authenticated_deriv_websocket",
+            loginid: balanceInfo?.loginid || account.deriv_account_id,
+            currency
+          }
+        })
+        .select("id")
+        .single();
+
+      if (createDerivAccountError) throw createDerivAccountError;
+      derivAccount = createdDerivAccount;
+    } else {
+      const { error: syncDerivAccountError } = await db.from("deriv_accounts")
+        .update({
+          currency,
+          status: "connected",
+          last_synced_at: observedAt,
+          updated_at: observedAt
+        })
+        .eq("id", derivAccount.id)
+        .eq("user_id", userId);
+      if (syncDerivAccountError) throw syncDerivAccountError;
+    }
 
     const { data: updatedAccount, error: accountUpdateError } = await db.from("real_trading_accounts")
       .update({
