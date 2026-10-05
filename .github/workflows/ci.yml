@@ -65,3 +65,16 @@ jobs:
           node --check reconciliationWorker.js
           node --check realExecutionEngine.js
           node --check reconciliationService.js
+
+  real-market-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Verify authenticated real-market reconnect safeguards
+        run: |
+          grep -q 'PRODUCTION_READ_ONLY_FREEZE = true' supabase/functions/trading-service/index.ts
+          grep -q 'lastTickRef' frontend/src/pages/RealMT5Terminal.jsx
+          grep -q 'REAL_MARKET_RECONNECTING' frontend/src/pages/RealMT5Terminal.jsx
+          grep -q 'ticks' frontend/src/pages/RealMT5Terminal.jsx
+          echo "REAL MARKET SAFETY STATIC CHECK: PASS"
