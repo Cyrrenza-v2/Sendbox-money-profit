@@ -108,7 +108,8 @@ function wsCall(url: string, payload: Record<string, unknown>, expected: string,
       if (data.msg_type === expected && (!data.req_id || data.req_id === reqId))
         finish(resolve, data);
     });
-    ws.addEventListener("error", () => finish(reject, new Error("DERIV_WEBSOCKET_ERROR")));\n    ws.addEventListener("close", () => finish(reject, new Error("DERIV_WEBSOCKET_CLOSED")));
+    ws.addEventListener("error", () => finish(reject, new Error("DERIV_WEBSOCKET_ERROR")));
+    ws.addEventListener("close", () => finish(reject, new Error("DERIV_WEBSOCKET_CLOSED")));
   });
 }
 
