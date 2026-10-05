@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabaseClient";
 
-const DERIV_PUBLIC_ENDPOINTS = ["wss:" + "//api.derivws.com/trading/v1/options/ws/public", "wss:" + "//ws.binaryws.com/websockets/v3"];
+const DERIV_PUBLIC_ENDPOINTS = ["wss:" + "//api.derivws.com/trading/v1/options/ws/public", "wss:" + "//ws.binaryws.com/websockets/v3"];\nconst DERIV_DISCOVERY_TIMEOUT_MS = 30000;\nconst DERIV_RETRY_BASE_MS = 1500;
 
 export default function LiveMarketPanel({ compact = false, selectedSymbol = null, onSymbolChange, onPriceChange, onOpenTerminal }) {
   const [markets, setMarkets] = useState([]);
@@ -86,7 +86,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         setDiscoveryComplete(false);
         setError(reason || "Could not reach Deriv market data from this browser. Check network WebSocket access.");
         endpointIndex = 0;
-        retryTimer = setTimeout(connect, Math.min(30000, 2000 * (2 ** Math.min(retryCount++, 4))));
+        retryTimer = setTimeout(connect, Math.min(30000, DERIV_RETRY_BASE_MS * (2 ** Math.min(retryCount++, 4))));
       }
     };
 
@@ -218,7 +218,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
 
       socket.onerror = () => {
         if (disposed) return;
-        scheduleNextEndpoint("Unable to establish a WebSocket connection to Deriv. Check whether your network blocks WebSockets.");
+        // Give transient browser/network failures a short grace period before\n        // failing over. Some mobile networks establish the socket slightly\n        // after the error event is emitted.\n        if (!failureHandled && !disposed) {\n          retryTimer = setTimeout(() => {\n            if (!symbolsLoaded && !disposed) {\n              scheduleNextEndpoint("Unable to establish a WebSocket connection to Deriv. Check whether your network blocks WebSockets.");\n            }\n          }, 1500);\n        }
       };
 
       socket.onclose = () => {
@@ -232,7 +232,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
           retryTimer = setTimeout(() => {
             endpointIndex = 0;
             connect();
-          }, Math.min(30000, 2000 * (2 ** Math.min(retryCount++, 4))));
+          }, Math.min(30000, DERIV_RETRY_BASE_MS * (2 ** Math.min(retryCount++, 4))));
         }
       };
     };
