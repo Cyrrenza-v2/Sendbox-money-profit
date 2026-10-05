@@ -83,18 +83,52 @@ async function callback(code: string, state: string) {
   });
   const ad = await ar.json().catch(() => ({}));
   const raw = Array.isArray(ad?.data) ? ad.data : (ad?.data ? [ad.data] : []);
-  const accounts = raw.filter((a: any) => {
+  let accounts = raw.filter((a: any) => {
     const type = String(a?.account_type || "").toLowerCase();
     return Boolean(String(a?.account_id || "").trim()) && (type === "real" || type === "demo" || type === "virtual");
   });
   const real = accounts.filter((a: any) => String(a?.account_type || "").toLowerCase() === "real");
-  const demo = accounts.filter((a: any) => ["demo", "virtual"].includes(String(a?.account_type || "").toLowerCase()));
+  let demo = accounts.filter((a: any) => ["demo", "virtual"].includes(String(a?.account_type || "").toLowerCase()));
+
+  // Make the demo connection actionable: if OAuth returns no Options API demo
+  // account, request a virtual demo account using the account_manage scope.
+  // This never creates or activates a real-money account.
+  if (!demo.length) {
+    const createResponse = await fetch("https://api.derivws.com/trading/v1/options/accounts", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${td.access_token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ currency: "USD", group: "row", account_type: "demo" })
+    });
+    const createdPayload = await createResponse.json().catch(() => ({}));
+    if (!createResponse.ok) {
+      const providerMessage = createdPayload?.errors?.[0]?.message;
+      return json({
+        ok: false,
+        error: providerMessage || "Unable to create or retrieve the Deriv API demo account. Reconnect and ensure demo account permissions are granted."
+      }, createResponse.status === 401 ? 401 : 502);
+    }
+    const createdRaw = Array.isArray(createdPayload?.data)
+      ? createdPayload.data
+      : (createdPayload?.data ? [createdPayload.data] : []);
+    const createdDemo = createdRaw.filter((a: any) =>
+      Boolean(String(a?.account_id || "").trim()) &&
+      ["demo", "virtual"].includes(String(a?.account_type || "").toLowerCase())
+    );
+    if (!createdDemo.length) {
+      return json({ ok: false, error: "Deriv did not return a usable demo Options account after the demo-account request." }, 502);
+    }
+    accounts = [...accounts, ...createdDemo];
+    demo = accounts.filter((a: any) => ["demo", "virtual"].includes(String(a?.account_type || "").toLowerCase()));
+  }
 
   if (!accounts.length)
     return json({ ok: false, error: "Deriv did not return an eligible demo or real API account" }, 403);
 
-  // Prefer a demo account for the initial VELTRION connection. Live account
-  // records may be synchronized, but real execution remains separately gated.
+  // Prefer a demo account for the VELTRION connection. Live account records
+  // may be synchronized, but real execution remains separately gated.
   const primaryAccounts = demo.length ? demo : real;
   const uid = p.user_id;
   const ids = primaryAccounts.map((a: any) => String(a.account_id || "")).filter(Boolean);
