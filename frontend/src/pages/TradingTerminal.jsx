@@ -32,7 +32,7 @@ function readCandles(message) {
 export default function TradingTerminal() {
   const [searchParams]=useSearchParams();
   const navigate=useNavigate();
-  const [symbol,setSymbol]=useState(()=>searchParams.get("symbol")||"frxEURUSD");
+  const [symbol,setSymbol]=useState(()=>searchParams.get("symbol")||"");
   const [tick,setTick]=useState(null),[feed,setFeed]=useState("WAITING"),[candles,setCandles]=useState([]),[timeframe,setTimeframe]=useState("M5");
   const [account,setAccount]=useState(null),[positions,setPositions]=useState([]),[orders,setOrders]=useState([]);
   const [quantity,setQuantity]=useState("0.01"),[stopLoss,setStopLoss]=useState(""),[takeProfit,setTakeProfit]=useState("");
