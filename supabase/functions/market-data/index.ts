@@ -19,6 +19,11 @@ const PUBLIC_ENDPOINTS = [
   "wss://ws.derivws.com/websockets/v3?app_id=1089"
 ];
 
+const SYSTEM_ENDPOINTS = [
+  "wss://ws.derivws.com/websockets/v3?app_id=1089",
+  "wss://ws.binaryws.com/websockets/v3"
+];
+
 function wsCall(url: string, payload: Record<string, unknown>, expected: string, timeoutMs = 8000) {
   return new Promise<any>((resolve, reject) => {
     const ws = new WebSocket(url);
@@ -146,6 +151,19 @@ function extractTradingTimeSymbols(node:any, marketName = "", submarketName = ""
   return out;
 }
 
+async function systemWsCall(payload: Record<string, unknown>, expected: string, timeoutMs = 8000) {
+  const attempts = SYSTEM_ENDPOINTS.map(endpoint => wsCall(endpoint, payload, expected, timeoutMs));
+  try {
+    return await Promise.any(attempts);
+  } catch (error) {
+    const errors = error instanceof AggregateError ? error.errors : [];
+    const lastError = errors.find((item: unknown) => item instanceof Error);
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("DERIV_TRADING_TIMES_UNAVAILABLE");
+  }
+}
+
 async function getUser(req: Request) {
   const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
   if (!token) return null;
@@ -169,7 +187,7 @@ Deno.serve(async req => {
     if (op === "catalog") {
       const [activeResult, scheduleResult] = await Promise.allSettled([
         publicWsCall({ active_symbols: "full", req_id: 62001 }, "active_symbols", 4000),
-        publicWsCall({ trading_times: "today", req_id: 62003 }, "trading_times", 4000)
+        systemWsCall({ trading_times: "today", req_id: 62003 }, "trading_times", 8000)
       ]);
 
       if (activeResult.status === "rejected") {
