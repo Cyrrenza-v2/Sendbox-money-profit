@@ -191,7 +191,8 @@ export default function RealMT5Terminal(){
    const q=Number(t?.quote),epoch=Number(t?.epoch);
    if(!Number.isFinite(q)||!Number.isFinite(epoch))return;
    setPrice(q);setFeed("LIVE");setTicks(a=>[{quote:q,epoch},...a].slice(0,40));
-   const activeTf=tfRef.current;\n   const bucket=Math.floor(epoch/activeTf)*activeTf;
+   const activeTf=tfRef.current;
+   const bucket=Math.floor(epoch/activeTf)*activeTf;
    setCandles(a=>{const last=a[a.length-1];if(!last||last.time!==bucket)return [...a,{time:bucket,open:q,high:q,low:q,close:q}].slice(-180);return [...a.slice(0,-1),{...last,high:Math.max(last.high,q),low:Math.min(last.low,q),close:q}]});
  };
 
