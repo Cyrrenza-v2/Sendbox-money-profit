@@ -79,3 +79,58 @@ jobs:
           grep -q 'ticks' frontend/src/pages/RealMT5Terminal.jsx
           echo "REAL MARKET SAFETY STATIC CHECK: PASS"
           echo "CI trigger verification: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+
+  market-data-verification:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify live Deriv catalog and tick coverage
+        run: |
+          node <<'NODE'
+          const endpoints = [
+            'wss://ws.derivws.com/websockets/v3?app_id=1089',
+            'wss://ws.binaryws.com/websockets/v3'
+          ];
+          const wsCall = (url, payload, expected, timeout=10000) => new Promise((resolve,reject)=>{
+            const ws = new WebSocket(url);
+            const timer = setTimeout(()=>{ try{ws.close()}catch{}; reject(new Error('timeout')); }, timeout);
+            ws.addEventListener('open',()=>ws.send(JSON.stringify(payload)));
+            ws.addEventListener('message',e=>{
+              let d; try{d=JSON.parse(String(e.data))}catch{return}
+              if(d.error){clearTimeout(timer);try{ws.close()}catch{};reject(new Error(d.error.message||'Deriv error'));return}
+              if(d.msg_type===expected){clearTimeout(timer);try{ws.close()}catch{};resolve(d)}
+            });
+            ws.addEventListener('error',()=>{clearTimeout(timer);try{ws.close()}catch{};reject(new Error('websocket error'))});
+          });
+          let catalog;
+          let last;
+          for (const endpoint of endpoints) {
+            try { catalog = await wsCall(endpoint,{active_symbols:'full',req_id:90001},'active_symbols'); break; }
+            catch(e){ last=e; }
+          }
+          if (!catalog?.active_symbols?.length) throw last || new Error('EMPTY_DERIV_CATALOG');
+          const symbols = [...new Set(catalog.active_symbols.map(x=>x.underlying_symbol||x.symbol).filter(Boolean))];
+          console.log('DERIV CURRENT ACTIVE SYMBOL COUNT:', symbols.length);
+          let ok=0, failed=[];
+          const concurrency=8;
+          for(let i=0;i<symbols.length;i+=concurrency){
+            const batch=symbols.slice(i,i+concurrency);
+            const results=await Promise.all(batch.map(async symbol=>{
+              try{
+                const r=await wsCall(endpoints[0],{ticks:symbol,subscribe:0,req_id:91000+i},'tick',7000);
+                const q=Number(r?.tick?.quote), e=Number(r?.tick?.epoch);
+                return Number.isFinite(q)&&Number.isFinite(e)?{symbol,ok:true}:{symbol,ok:false};
+              }catch{
+                try{
+                  const r=await wsCall(endpoints[1],{ticks:symbol,subscribe:0,req_id:92000+i},'tick',7000);
+                  const q=Number(r?.tick?.quote), e=Number(r?.tick?.epoch);
+                  return Number.isFinite(q)&&Number.isFinite(e)?{symbol,ok:true}:{symbol,ok:false};
+                }catch{return {symbol,ok:false}}
+              }
+            }));
+            for(const r of results) r.ok?ok++:failed.push(r.symbol);
+          }
+          console.log('DERIV TICK VERIFICATION:', ok+'/'+symbols.length);
+          if(failed.length) { console.error('SYMBOLS WITHOUT VALID TICK DATA:',failed); process.exit(1); }
+          console.log('MARKET DATA COVERAGE: PASS');
+          NODE
