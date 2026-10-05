@@ -5,7 +5,7 @@ const secret = Deno.env.get(["SUPABASE","SERVICE","ROLE","KEY"].join("_"))!;
 const admin = createClient(url, secret, { auth: { persistSession: false } });
 
 const redirect = "https://qalowxnqngzsdlayqivr.supabase.co/functions/v1/deriv-oauth/callback";
-const appUrl = (Deno.env.get("VELTRION_APP_URL") || "https://cyrrenza-v2.github.io/Sendbox-money-profit").replace(/\/$/, "");
+const appUrl = (Deno.env.get("VELTRION_APP_URL") || "https://sendbox-money-profit-git-feat-deriv-dem-7bc095-uasianubong-2840.vercel.app").replace(/\/$/, "");
 const client = Deno.env.get("DERIV_OAUTH_CLIENT_ID") || Deno.env.get("DERIV_CLIENT_ID") || "34yFXgA3K5sZIE56LQI7J";
 
 const cors = {
