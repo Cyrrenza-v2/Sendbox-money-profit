@@ -84,8 +84,8 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         const marketSymbol = selectedSymbolRef.current || focusedSymbol;
         if (marketSymbol) {
           try {
-            const { data, error: invokeError } = await supabase.functions.invoke("trading-service", {
-              body: { operation: "public_market_tick", symbol: marketSymbol }
+            const { data, error: invokeError } = await supabase.functions.invoke("market-data", {
+              body: { operation: "tick", symbol: marketSymbol }
             });
             const tick = data?.ok ? data.data : null;
             const quote = Number(tick?.quote);
@@ -107,7 +107,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
     const loadServerCatalog = async () => {
       try {
         const { data, error: invokeError } = await supabase.functions.invoke("trading-service", {
-          body: { operation: "public_market_catalog" }
+          body: { operation: "catalog" }
         });
         if (invokeError) throw invokeError;
         const payload = data?.ok ? data.data : null;
