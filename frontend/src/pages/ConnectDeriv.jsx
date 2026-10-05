@@ -235,6 +235,16 @@ export default function ConnectDeriv() {
         )}
         {error && <p className="error" role="alert">{error}</p>}
 
+        <div className="success-box" style={{ marginTop: 16 }}>
+          <b>CONNECT DERIV DEMO ACCOUNT</b>
+          <p style={{ margin: "6px 0 10px" }}>
+            Connect your Deriv API demo account for read-only verification. If your authorized Deriv account has no Options API demo account yet, VELTRION will request a virtual demo account. This does not activate real trading or connect the separate MT5 demo account.
+          </p>
+          <button className="primary" onClick={connect} disabled={status === "STARTING OAUTH"}>
+            {status === "STARTING OAUTH" ? "OPENING DERIV AUTHORIZATION…" : isDemo ? "RECONNECT DEMO ACCOUNT" : "CONNECT DEMO ACCOUNT"}
+          </button>
+        </div>
+
         {isDemo && (
           <div className="success-box" style={{ marginTop: 16 }}>
             <b>DERIV API DEMO CONNECTION</b>
