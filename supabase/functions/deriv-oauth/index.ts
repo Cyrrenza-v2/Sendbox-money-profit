@@ -83,13 +83,21 @@ async function callback(code: string, state: string) {
   });
   const ad = await ar.json().catch(() => ({}));
   const raw = Array.isArray(ad?.data) ? ad.data : (ad?.data ? [ad.data] : []);
-  const real = raw.filter((a: any) => String(a?.account_type || "").toLowerCase() === "real");
+  const accounts = raw.filter((a: any) => {
+    const type = String(a?.account_type || "").toLowerCase();
+    return Boolean(String(a?.account_id || "").trim()) && (type === "real" || type === "demo" || type === "virtual");
+  });
+  const real = accounts.filter((a: any) => String(a?.account_type || "").toLowerCase() === "real");
+  const demo = accounts.filter((a: any) => ["demo", "virtual"].includes(String(a?.account_type || "").toLowerCase()));
 
-  if (!real.length)
-    return json({ ok: false, error: "No real Deriv account was returned" }, 403);
+  if (!accounts.length)
+    return json({ ok: false, error: "Deriv did not return an eligible demo or real API account" }, 403);
 
+  // Prefer a demo account for the initial VELTRION connection. Live account
+  // records may be synchronized, but real execution remains separately gated.
+  const primaryAccounts = demo.length ? demo : real;
   const uid = p.user_id;
-  const ids = real.map((a: any) => String(a.account_id || "")).filter(Boolean);
+  const ids = primaryAccounts.map((a: any) => String(a.account_id || "")).filter(Boolean);
   const now = new Date().toISOString();
 
   await admin.from("profiles").upsert({ user_id: uid, status: "active", updated_at: now });
@@ -104,44 +112,50 @@ async function callback(code: string, state: string) {
     updated_at: now
   }, { onConflict: "user_id" });
 
-  for (const a of real) {
+  for (const a of accounts) {
     const derivAccountId = String(a.account_id || "").trim();
     if (!derivAccountId) continue;
+    const rawType = String(a.account_type || "").toLowerCase();
+    const accountType = rawType === "virtual" ? "demo" : rawType;
+    if (accountType !== "demo" && accountType !== "real") continue;
 
-    await admin.from("deriv_accounts").upsert({
+    const { error: derivAccountError } = await admin.from("deriv_accounts").upsert({
       user_id: uid,
       deriv_account_id: derivAccountId,
-      account_type: "real",
+      account_type: accountType,
       currency: a.currency || null,
       status: "connected",
       scopes: String(td.scope || "").split(/[ ,]+/).filter(Boolean),
       last_synced_at: now,
       raw: a
     }, { onConflict: "user_id,deriv_account_id" });
+    if (derivAccountError) throw derivAccountError;
 
-    // Mirror only the authenticated real account returned by Deriv.
-    // Keep the internal account inactive and emergency-stopped.
-    const parsedBalance = Number(a.balance);
-    const verifiedBalance = Number.isFinite(parsedBalance) && parsedBalance >= 0 ? parsedBalance : 0;
-    const { error: accountError } = await admin.from("real_trading_accounts").upsert({
-      user_id: uid,
-      deriv_account_id: derivAccountId,
-      currency: a.currency || "USD",
-      balance: verifiedBalance,
-      equity: verifiedBalance,
-      is_active: false,
-      emergency_stopped: true,
-      updated_at: now
-    }, { onConflict: "user_id,deriv_account_id" });
-    if (accountError) throw accountError;
+    // Only real accounts are mirrored to the real-trading table. They remain
+    // inactive and emergency-stopped; a demo account never provisions live capital.
+    if (accountType === "real") {
+      const parsedBalance = Number(a.balance);
+      const verifiedBalance = Number.isFinite(parsedBalance) && parsedBalance >= 0 ? parsedBalance : 0;
+      const { error: accountError } = await admin.from("real_trading_accounts").upsert({
+        user_id: uid,
+        deriv_account_id: derivAccountId,
+        currency: a.currency || "USD",
+        balance: verifiedBalance,
+        equity: verifiedBalance,
+        is_active: false,
+        emergency_stopped: true,
+        updated_at: now
+      }, { onConflict: "user_id,deriv_account_id" });
+      if (accountError) throw accountError;
+    }
   }
 
-  const primaryRealAccount = real.find((a: any) => String(a.account_id || "").trim() === ids[0]);
+  const primaryAccount = primaryAccounts.find((a: any) => String(a.account_id || "").trim() === ids[0]);
   await admin.from("deriv_connections").upsert({
     user_id: uid,
     status: "connected",
     deriv_loginid: ids[0] || null,
-    currency: primaryRealAccount?.currency || null,
+    currency: primaryAccount?.currency || null,
     last_success_at: now,
     last_verified_at: now,
     last_error: null,
