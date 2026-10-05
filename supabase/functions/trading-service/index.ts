@@ -488,18 +488,54 @@ async function handle(userId: string, body: any) {
   }
 
   if (op === "real_snapshot") {
-    const [balance, portfolio, profit, statement] = await Promise.all([
+    // Read-only snapshot calls are independent. A temporary failure in one
+    // Deriv request must not tear down the entire terminal state.
+    const results = await Promise.allSettled([
       realWsCall(userId, { balance: 1 }, "balance"),
       realWsCall(userId, { portfolio: 1 }, "portfolio"),
       realWsCall(userId, { profit_table: 1, limit: 100, sort: "DESC" }, "profit_table"),
       realWsCall(userId, { statement: 1, limit: 100 }, "statement")
     ]);
-    await reconcileRealState(userId, balance.balance, profit.profit_table);
+
+    const [balanceResult, portfolioResult, profitResult, statementResult] = results;
+    const warnings = [];
+
+    const valueOf = (result, label) => {
+      if (result.status === "fulfilled") return result.value;
+      warnings.push({ section: label, error: result.reason instanceof Error ? result.reason.message : "DERIV_REQUEST_FAILED" });
+      return null;
+    };
+
+    const balance = valueOf(balanceResult, "balance");
+    const portfolio = valueOf(portfolioResult, "portfolio");
+    const profit = valueOf(profitResult, "profit_table");
+    const statement = valueOf(statementResult, "statement");
+
+    // A balance is the minimum required identity/state signal. If it failed,
+    // surface the failure rather than inventing a zero balance.
+    if (!balance?.balance) {
+      throw new Error(warnings[0]?.error || "REAL_BALANCE_UNAVAILABLE");
+    }
+
+    // Reconciliation is best-effort for the read-only screen. A temporary
+    // reconciliation write/API failure must not blank the account terminal.
+    if (profit?.profit_table) {
+      try {
+        await reconcileRealState(userId, balance.balance, profit.profit_table);
+      } catch (error) {
+        warnings.push({
+          section: "reconciliation",
+          error: error instanceof Error ? error.message : "REAL_RECONCILIATION_FAILED"
+        });
+      }
+    }
+
     return {
       balance: balance.balance,
-      portfolio: portfolio.portfolio,
-      profit_table: profit.profit_table,
-      statement: statement.statement
+      portfolio: portfolio?.portfolio ?? { contracts: [] },
+      profit_table: profit?.profit_table ?? { transactions: [] },
+      statement: statement?.statement ?? { transactions: [] },
+      warnings
     };
   }
 
