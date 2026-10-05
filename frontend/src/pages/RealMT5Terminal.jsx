@@ -42,7 +42,14 @@ export default function RealMT5Terminal(){
      const s=await invoke(fn,{operation:"real_snapshot"});
      if(s){
        setAccount(s);
-       setPortfolio(Array.isArray(s?.portfolio?.contracts)?s.portfolio.contracts:[]);
+       const { data: syncedPositions, error: positionsError } = await supabase
+         .from("positions")
+         .select("external_position_id,symbol,side,quantity,entry_price,current_price,unrealized_pnl,status,observed_at")
+         .eq("source","deriv")
+         .eq("environment","real")
+         .order("observed_at",{ascending:false});
+       if (positionsError) throw positionsError;
+       setPortfolio(Array.isArray(syncedPositions) ? syncedPositions : []);
        setHistory(Array.isArray(s?.profit_table?.transactions)?s.profit_table.transactions:[]);
        setStatements(Array.isArray(s?.statement?.transactions)?s.statement.transactions:[]);
        setLastSync(new Date());
@@ -100,7 +107,7 @@ export default function RealMT5Terminal(){
   <main className="content vt-page">
    <header className="vt-heading"><div><span className="eyebrow real-eyebrow">PHASE 2 / DERIV REAL</span><h1>Real Account — Read Only</h1><p>Authenticated Deriv account, live market data, positions, orders/history and reconciliation. Temporary connection loss never clears the last valid account state.</p></div><div className="vt-header-actions"><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}><i/> {feed==="LIVE"?"LIVE MARKET DATA":feed}</span></div></header>
    {error&&<div className="market-detail-note">Connection warning: {error} · Retaining last valid data and retrying automatically.</div>}
-   <div className="market-account-strip"><div className="market-account-card"><span>REAL BALANCE</span><strong>{account?.currency||"USD"} {fmt(balance,2)}</strong><small>{account?.loginid||account?.login||"Real account"} · synced {safeTime}</small></div><div className="market-account-card"><span>EQUITY</span><strong>{account?.currency||"USD"} {fmt(eq,2)}</strong><small>Server-reconciled</small></div><div className="market-account-card market-account-state"><span>EXECUTION STATE</span><strong>LOCKED</strong><small>Phase 2 is read-only; no real orders or transfers</small></div></div>
+   <div className="market-account-strip"><div className="market-account-card"><span>REAL BALANCE</span><strong>{account?.currency||"USD"} {fmt(balance,2)}</strong><small>{account?.loginid||account?.login||"Real account"} · synced {safeTime}</small></div><div className="market-account-card"><span>EQUITY</span><strong>{account?.currency||"USD"} {fmt(eq,2)}</strong><small>Server-reconciled</small></div><div className="market-account-card market-account-state"><span>PORTFOLIO SYNC</span><strong>{s?.supabase_sync?.status||"PENDING"}</strong><small>{s?.supabase_sync?.open_positions??0} open positions · {s?.supabase_sync?.closed_orders??0} closed records synced</small></div></div>
    <LiveMarketPanel selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={onTick}/>
    <section className="vt-panel vt-chart-panel"><div className="vt-panel-head"><div><h2>{symbol} Live Chart</h2><p>Deriv OHLC history + current tick stream</p></div><div className="vt-timeframes">{TIMEFRAMES.map(x=><button key={x.seconds} className={tf===x.seconds?"active":""} onClick={()=>setTf(x.seconds)}>{x.label}</button>)}</div></div><Chart candles={candles} price={price} symbol={symbol}/></section>
    <section className="vt-panel vt-tick-tape"><div className="vt-section-title"><div><h2>Live Tick Tape</h2><p>Real-time quotes for the selected market</p></div><span className="vt-ai-tag">{ticks.length} TICKS</span></div><div className="vt-tick-grid">{ticks.slice(0,20).map((t,i)=><div className="vt-tick-row" key={t.epoch+"-"+i}><span>{new Date(t.epoch*1000).toLocaleTimeString()}</span><strong>{fmt(t.quote,8)}</strong><small>{i===0?"LATEST":"TICK"}</small></div>)}</div>{!ticks.length&&<div className="vt-empty">Waiting for live ticks…</div>}</section>
