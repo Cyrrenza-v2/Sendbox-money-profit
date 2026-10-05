@@ -148,6 +148,106 @@ async function realWsCall(userId: string, payload: Record<string, unknown>, expe
   return wsCall(url, payload, expected);
 }
 
+async function realSnapshotBatch(userId: string) {
+  const requests = [
+    { key: "balance", payload: { balance: 1 }, expected: "balance" },
+    { key: "portfolio", payload: { portfolio: 1 }, expected: "portfolio" },
+    { key: "profit_table", payload: { profit_table: 1, limit: 100, sort: "DESC" }, expected: "profit_table" },
+    { key: "statement", payload: { statement: 1, limit: 100 }, expected: "statement" }
+  ];
+
+  const runOnce = async () => {
+    const { account, accessToken } = await realContext(userId);
+    const url = await otpUrl(String(account.deriv_account_id), accessToken);
+    return new Promise<Record<string, any>>((resolve, reject) => {
+      const ws = new WebSocket(url);
+      const timeoutMs = 15000;
+      const timer = setTimeout(() => {
+        try { ws.close(); } catch {}
+        reject(new Error("DERIV_SNAPSHOT_TIMEOUT"));
+      }, timeoutMs);
+      const pending = new Map<number, string>();
+      const result: Record<string, any> = {};
+      const errors: Record<string, string> = {};
+
+      requests.forEach((request, index) => {
+        const reqId = 82000 + index;
+        pending.set(reqId, request.key);
+        request.req_id = reqId;
+      });
+
+      const finish = () => {
+        if (pending.size === 0) {
+          clearTimeout(timer);
+          try { ws.close(); } catch {}
+          resolve({ result, errors });
+        }
+      };
+
+      ws.addEventListener("open", () => {
+        for (const request of requests) {
+          ws.send(JSON.stringify({ ...request.payload, req_id: request.req_id }));
+        }
+      });
+
+      ws.addEventListener("message", event => {
+        let data: any;
+        try { data = JSON.parse(String(event.data)); } catch { return; }
+        const reqId = Number(data?.req_id);
+        const key = pending.get(reqId);
+        if (!key) return;
+        pending.delete(reqId);
+        if (data?.error) errors[key] = String(data.error.message || "DERIV_API_ERROR");
+        else result[key] = data;
+        finish();
+      });
+
+      ws.addEventListener("error", () => {
+        clearTimeout(timer);
+        try { ws.close(); } catch {}
+        reject(new Error("DERIV_SNAPSHOT_WEBSOCKET_ERROR"));
+      });
+
+      ws.addEventListener("close", () => {
+        if (pending.size > 0) {
+          clearTimeout(timer);
+          reject(new Error("DERIV_SNAPSHOT_WEBSOCKET_CLOSED"));
+        }
+      });
+    });
+  };
+
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await runOnce();
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("DERIV_SNAPSHOT_UNAVAILABLE");
+}
+
+async function getCachedRealSnapshot(userId: string) {
+  const { data, error } = await db.from("deriv_sync_events")
+    .select("payload,created_at")
+    .eq("user_id", userId)
+    .eq("event_type", "REAL_PORTFOLIO_SNAPSHOT")
+    .eq("status", "SUCCESS")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.payload) return null;
+  return {
+    ...data.payload,
+    stale: true,
+    stale_since: data.created_at,
+    cache_source: "supabase_last_good_real_snapshot"
+  };
+}
+
 async function tradingGate(userId: string) {
   const [
     { data: freezeRows, error: freezeError },
@@ -560,89 +660,123 @@ async function handle(userId: string, body: any) {
   }
 
   if (op === "real_snapshot") {
-    // Read-only snapshot calls are independent. A temporary failure in one
-    // Deriv request must not tear down the entire terminal state.
-    const results = await Promise.allSettled([
-      realWsCall(userId, { balance: 1 }, "balance"),
-      realWsCall(userId, { portfolio: 1 }, "portfolio"),
-      realWsCall(userId, { profit_table: 1, limit: 100, sort: "DESC" }, "profit_table"),
-      realWsCall(userId, { statement: 1, limit: 100 }, "statement")
-    ]);
+    let liveSnapshot = true;
+    let batch: any = null;
+    let warnings: any[] = [];
 
-    const [balanceResult, portfolioResult, profitResult, statementResult] = results;
-    const warnings = [];
-
-    const valueOf = (result, label) => {
-      if (result.status === "fulfilled") return result.value;
-      warnings.push({ section: label, error: result.reason instanceof Error ? result.reason.message : "DERIV_REQUEST_FAILED" });
-      return null;
-    };
-
-    const balance = valueOf(balanceResult, "balance");
-    const portfolio = valueOf(portfolioResult, "portfolio");
-    const profit = valueOf(profitResult, "profit_table");
-    const statement = valueOf(statementResult, "statement");
-
-    // A balance is the minimum required identity/state signal. If it failed,
-    // surface the failure rather than inventing a zero balance.
-    if (!balance || !Number.isFinite(Number(balance.balance?.balance))) {
-      throw new Error(warnings[0]?.error || "REAL_BALANCE_UNAVAILABLE");
-    }
-
-    // Persist the authenticated Deriv portfolio into Supabase before returning it.
-    // This keeps the Portfolio UI backed by a server-side synchronization record
-    // and gives us a durable audit trail without exposing Deriv credentials.
-    let sync = { status: "FAILED", synced_at: new Date().toISOString(), open_positions: 0, closed_orders: 0 };
     try {
-      const { account } = await realContext(userId);
-      const livePortfolio = Array.isArray(portfolio?.portfolio?.contracts) ? portfolio.portfolio.contracts : [];
-      const liveClosed = Array.isArray(profit?.profit_table?.transactions) ? profit.profit_table.transactions : [];
-      const syncEvent = await db.from("deriv_sync_events").insert({
-        user_id: userId, deriv_account_id: account.id, event_type: "REAL_PORTFOLIO_SNAPSHOT", status: "SUCCESS",
-        payload: { source: "authenticated_deriv_websocket", balance: balance.balance, portfolio: livePortfolio, profit_table: liveClosed, statement: statement?.statement?.transactions ?? [] }
-      }).select("id").single();
-      if (syncEvent.error) throw syncEvent.error;
-      const cleared = await db.from("positions").delete().eq("user_id", userId).eq("account_id", account.id).eq("source", "deriv").eq("environment", "real");
-      if (cleared.error) throw cleared.error;
-      if (livePortfolio.length) {
-        const rows = livePortfolio.map((p: any) => {
-          const contractId = String(p.contract_id ?? p.id ?? "").trim();
-          return {
-            user_id: userId, source: "deriv", environment: "real", account_id: account.id,
-            external_position_id: contractId || crypto.randomUUID(),
-            symbol: String(p.underlying_symbol ?? p.symbol ?? "UNKNOWN"),
-            side: String(p.contract_type ?? p.direction ?? "BUY").toUpperCase().includes("PUT") ? "SELL" : "BUY",
-            quantity: Math.max(Number(p.buy_price ?? p.amount ?? 0), 0.0001),
-            entry_price: Math.max(Number(p.buy_price ?? 0), 0),
-            current_price: Math.max(Number(p.bid_price ?? p.sell_price ?? p.current_price ?? p.buy_price ?? 0), 0),
-            unrealized_pnl: Number(p.profit ?? p.profit_loss ?? 0) || 0,
-            status: "OPEN", observed_at: new Date().toISOString(), raw: p
-          };
-        });
-        const positionInsert = await db.from("positions").insert(rows);
-        if (positionInsert.error) throw positionInsert.error;
-      }
-      sync = { status: "SYNCED", synced_at: new Date().toISOString(), open_positions: livePortfolio.length, closed_orders: liveClosed.length };
+      batch = await realSnapshotBatch(userId);
     } catch (error) {
-      warnings.push({ section: "supabase_sync", error: error instanceof Error ? error.message : "REAL_PORTFOLIO_SUPABASE_SYNC_FAILED" });
+      warnings.push({
+        section: "snapshot",
+        error: error instanceof Error ? error.message : "DERIV_SNAPSHOT_UNAVAILABLE"
+      });
     }
 
-    // Reconciliation is best-effort for the read-only screen.
-    if (profit?.profit_table) {
+    const balance = batch?.result?.balance;
+    const portfolio = batch?.result?.portfolio;
+    const profit = batch?.result?.profit_table;
+    const statement = batch?.result?.statement;
+
+    for (const [section, message] of Object.entries(batch?.errors || {})) {
+      warnings.push({ section, error: message });
+    }
+
+    let snapshot: any;
+    if (balance && Number.isFinite(Number(balance.balance?.balance))) {
+      snapshot = {
+        balance: balance.balance,
+        portfolio: portfolio?.portfolio ?? { contracts: [] },
+        profit_table: profit?.profit_table ?? { transactions: [] },
+        statement: statement?.statement ?? { transactions: [] }
+      };
+    } else {
+      snapshot = await getCachedRealSnapshot(userId);
+      if (!snapshot) {
+        throw new Error(warnings[0]?.error || "REAL_BALANCE_UNAVAILABLE");
+      }
+      liveSnapshot = false;
+      warnings.push({
+        section: "snapshot",
+        error: "LIVE_REAL_ACCOUNT_UNAVAILABLE_USING_LAST_GOOD_SNAPSHOT"
+      });
+    }
+
+    if (liveSnapshot) {
+      // Persist only a complete live snapshot. This becomes the durable reconnect fallback.
       try {
-        await reconcileRealState(userId, balance.balance, profit.profit_table);
+        const { account } = await realContext(userId);
+        const livePortfolio = Array.isArray(snapshot.portfolio?.contracts) ? snapshot.portfolio.contracts : [];
+        const liveClosed = Array.isArray(snapshot.profit_table?.transactions) ? snapshot.profit_table.transactions : [];
+        const syncEvent = await db.from("deriv_sync_events").insert({
+          user_id: userId,
+          deriv_account_id: account.id,
+          event_type: "REAL_PORTFOLIO_SNAPSHOT",
+          status: "SUCCESS",
+          payload: {
+            source: "authenticated_deriv_websocket",
+            balance: snapshot.balance,
+            portfolio: snapshot.portfolio,
+            profit_table: snapshot.profit_table,
+            statement: snapshot.statement
+          }
+        }).select("id").single();
+        if (syncEvent.error) throw syncEvent.error;
+
+        const cleared = await db.from("positions").delete()
+          .eq("user_id", userId).eq("account_id", account.id)
+          .eq("source", "deriv").eq("environment", "real");
+        if (cleared.error) throw cleared.error;
+
+        if (livePortfolio.length) {
+          const rows = livePortfolio.map((p: any) => {
+            const contractId = String(p.contract_id ?? p.id ?? "").trim();
+            return {
+              user_id: userId, source: "deriv", environment: "real", account_id: account.id,
+              external_position_id: contractId || crypto.randomUUID(),
+              symbol: String(p.underlying_symbol ?? p.symbol ?? "UNKNOWN"),
+              side: String(p.contract_type ?? p.direction ?? "BUY").toUpperCase().includes("PUT") ? "SELL" : "BUY",
+              quantity: Math.max(Number(p.buy_price ?? p.amount ?? 0), 0.0001),
+              entry_price: Math.max(Number(p.buy_price ?? 0), 0),
+              current_price: Math.max(Number(p.bid_price ?? p.sell_price ?? p.current_price ?? p.buy_price ?? 0), 0),
+              unrealized_pnl: Number(p.profit ?? p.profit_loss ?? 0) || 0,
+              status: "OPEN", observed_at: new Date().toISOString(), raw: p
+            };
+          });
+          const positionInsert = await db.from("positions").insert(rows);
+          if (positionInsert.error) throw positionInsert.error;
+        }
+
+        snapshot.supabase_sync = {
+          status: "SYNCED",
+          synced_at: new Date().toISOString(),
+          open_positions: livePortfolio.length,
+          closed_orders: liveClosed.length
+        };
       } catch (error) {
-        warnings.push({ section: "reconciliation", error: error instanceof Error ? error.message : "REAL_RECONCILIATION_FAILED" });
+        warnings.push({
+          section: "supabase_sync",
+          error: error instanceof Error ? error.message : "REAL_PORTFOLIO_SUPABASE_SYNC_FAILED"
+        });
+      }
+
+      if (profit?.profit_table) {
+        try {
+          await reconcileRealState(userId, snapshot.balance, profit.profit_table);
+        } catch (error) {
+          warnings.push({
+            section: "reconciliation",
+            error: error instanceof Error ? error.message : "REAL_RECONCILIATION_FAILED"
+          });
+        }
       }
     }
 
     return {
-      balance: balance.balance,
-      portfolio: portfolio?.portfolio ?? { contracts: [] },
-      profit_table: profit?.profit_table ?? { transactions: [] },
-      statement: statement?.statement ?? { transactions: [] },
-      supabase_sync: sync,
-      warnings
+      ...snapshot,
+      warnings,
+      stale: !liveSnapshot,
+      observed_at: snapshot.observed_at || (liveSnapshot ? new Date().toISOString() : undefined)
     };
   }
   if (op === "reconcile") {
