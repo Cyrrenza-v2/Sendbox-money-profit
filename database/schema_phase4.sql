@@ -4,6 +4,7 @@ create index if not exists idx_sandbox_orders_user_created on public.sandbox_ord
 create index if not exists idx_sandbox_positions_user on public.sandbox_positions(user_id);
 create index if not exists idx_sandbox_ledger_user_created on public.sandbox_ledger(user_id,created_at desc);
 create unique index if not exists uq_sandbox_ledger_idempotency on public.sandbox_ledger(idempotency_key) where idempotency_key is not null;
+create unique index if not exists uq_sandbox_orders_user_idempotency on public.sandbox_orders(user_id,idempotency_key) where idempotency_key is not null;
 alter table public.sandbox_orders add column if not exists stop_loss numeric,add column if not exists take_profit numeric,add column if not exists closed_at timestamptz,add column if not exists exit_price numeric,add column if not exists realized_pnl numeric default 0;
 alter table public.sandbox_positions add column if not exists stop_loss numeric,add column if not exists take_profit numeric,add column if not exists opened_at timestamptz default now(),add column if not exists source_order_id uuid;
 create or replace function public.sandbox_ledger_immutable() returns trigger language plpgsql as $$ begin if tg_op <> 'INSERT' then raise exception 'sandbox_ledger is append-only'; end if; return new; end $$;
