@@ -173,13 +173,15 @@ Deno.serve(async req => {
         : [];
       if (!markets.length) throw new Error("DERIV_PUBLIC_MARKET_CATALOG_EMPTY");
 
-      const bySymbol = new Map<string, any>(markets.map((item:any) => [item.symbol, item]));
+      const activeSymbolSet = new Set(markets.map((item:any) => item.symbol));
+      const bySymbol = new Map<string, any>(markets.map((item:any) => [item.symbol, { ...item, isActive: true }]));
       try {
         const scheduleResponse = await publicWsCall({ trading_times: "today", req_id: 62003 }, "trading_times");
         const scheduleSymbols = extractTradingTimeSymbols(scheduleResponse?.trading_times);
         for (const item of scheduleSymbols.values()) {
           if (bySymbol.has(item.symbol)) continue;
-          bySymbol.set(item.symbol, normalizeMarket(item));
+          const normalized = normalizeMarket(item);
+          if (normalized?.symbol) bySymbol.set(normalized.symbol, { ...normalized, isActive: false });
         }
       } catch {
         // active_symbols remains the authoritative fallback if trading_times is unavailable.
@@ -193,7 +195,7 @@ Deno.serve(async req => {
         display_name: item.name,
         market: item.market,
         submarket: item.subgroup,
-        is_active: true,
+        is_active: item.isActive !== false,
         raw: item,
         updated_at: updatedAt
       }));
