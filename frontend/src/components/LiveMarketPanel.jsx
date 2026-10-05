@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabaseClient";
 
-const DERIV_PUBLIC_ENDPOINTS = ["wss:" + "//api.derivws.com/trading/v1/options/ws/public", "wss:" + "//ws.binaryws.com/websockets/v3"];\nconst DERIV_DISCOVERY_TIMEOUT_MS = 30000;\nconst DERIV_RETRY_BASE_MS = 1500;
+const DERIV_PUBLIC_ENDPOINTS = ["wss:" + "//api.derivws.com/trading/v1/options/ws/public", "wss:" + "//ws.binaryws.com/websockets/v3"];
+const DERIV_DISCOVERY_TIMEOUT_MS = 30000;
+const DERIV_RETRY_BASE_MS = 1500;
 const DERIV_DISCOVERY_TIMEOUT_MS = 30000;
 const DERIV_RETRY_BASE_MS = 1500;
 
@@ -220,7 +222,16 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
 
       socket.onerror = () => {
         if (disposed) return;
-        // Give transient browser/network failures a short grace period before\n        // failing over. Some mobile networks establish the socket slightly\n        // after the error event is emitted.\n        if (!failureHandled && !disposed) {\n          retryTimer = setTimeout(() => {\n            if (!symbolsLoaded && !disposed) {\n              scheduleNextEndpoint("Unable to establish a WebSocket connection to Deriv. Check whether your network blocks WebSockets.");\n            }\n          }, 1500);\n        }
+        // Give transient browser/network failures a short grace period before
+        // failing over. Some mobile networks establish the socket slightly
+        // after the error event is emitted.
+        if (!failureHandled && !disposed) {
+          retryTimer = setTimeout(() => {
+            if (!symbolsLoaded && !disposed) {
+              scheduleNextEndpoint("Unable to establish a WebSocket connection to Deriv. Check whether your network blocks WebSockets.");
+            }
+          }, 1500);
+        }
       };
 
       socket.onclose = () => {
