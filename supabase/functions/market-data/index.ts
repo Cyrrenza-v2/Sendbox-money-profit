@@ -50,10 +50,10 @@ function wsCall(url: string, payload: Record<string, unknown>, expected: string,
   });
 }
 
-async function publicWsCall(payload: Record<string, unknown>, expected: string) {
+async function publicWsCall(payload: Record<string, unknown>, expected: string, timeoutMs = 4000) {
   let lastError: unknown = null;
   for (const endpoint of PUBLIC_ENDPOINTS) {
-    try { return await wsCall(endpoint, payload, expected); }
+    try { return await wsCall(endpoint, payload, expected, timeoutMs); }
     catch (error) { lastError = error; }
   }
   throw lastError instanceof Error ? lastError : new Error("DERIV_PUBLIC_MARKET_DATA_UNAVAILABLE");
@@ -167,24 +167,37 @@ Deno.serve(async req => {
     const op = String(body.operation || "catalog");
 
     if (op === "catalog") {
-      const response = await publicWsCall({ active_symbols: "full", req_id: 62001 }, "active_symbols");
+      const [activeResult, scheduleResult] = await Promise.allSettled([
+        publicWsCall({ active_symbols: "full", req_id: 62001 }, "active_symbols", 4000),
+        publicWsCall({ trading_times: "today", req_id: 62003 }, "trading_times", 4000)
+      ]);
+
+      if (activeResult.status === "rejected") {
+        throw activeResult.reason instanceof Error
+          ? activeResult.reason
+          : new Error("DERIV_PUBLIC_MARKET_CATALOG_UNAVAILABLE");
+      }
+
+      const response = activeResult.value;
       const markets = Array.isArray(response?.active_symbols)
         ? response.active_symbols.map(normalizeMarket).filter(Boolean)
         : [];
       if (!markets.length) throw new Error("DERIV_PUBLIC_MARKET_CATALOG_EMPTY");
 
-      const activeSymbolSet = new Set(markets.map((item:any) => item.symbol));
       const bySymbol = new Map<string, any>(markets.map((item:any) => [item.symbol, { ...item, isActive: true }]));
-      try {
-        const scheduleResponse = await publicWsCall({ trading_times: "today", req_id: 62003 }, "trading_times");
-        const scheduleSymbols = extractTradingTimeSymbols(scheduleResponse?.trading_times);
+      let tradingTimesError: string | null = null;
+
+      if (scheduleResult.status === "fulfilled") {
+        const scheduleSymbols = extractTradingTimeSymbols(scheduleResult.value?.trading_times);
         for (const item of scheduleSymbols.values()) {
           if (bySymbol.has(item.symbol)) continue;
           const normalized = normalizeMarket(item);
           if (normalized?.symbol) bySymbol.set(normalized.symbol, { ...normalized, isActive: false });
         }
-      } catch {
-        // active_symbols remains the authoritative fallback if trading_times is unavailable.
+      } else {
+        tradingTimesError = scheduleResult.reason instanceof Error
+          ? scheduleResult.reason.message
+          : "DERIV_TRADING_TIMES_UNAVAILABLE";
       }
 
       const mergedMarkets = Array.from(bySymbol.values()).filter(Boolean);
@@ -201,7 +214,7 @@ Deno.serve(async req => {
       }));
       const { error } = await db.from("market_symbols").upsert(rows, { onConflict: "symbol" });
       if (error) throw error;
-      return json({ ok: true, data: { markets: mergedMarkets, count: mergedMarkets.length, activeSymbolCount: markets.length, tradingTimesCount: Math.max(0, mergedMarkets.length - markets.length), source: "server_deriv_public_websocket+trading_times", observed_at: updatedAt } });
+      return json({ ok: true, data: { markets: mergedMarkets, count: mergedMarkets.length, activeSymbolCount: markets.length, tradingTimesCount: Math.max(0, mergedMarkets.length - markets.length), source: "server_deriv_public_websocket+trading_times", tradingTimesError, observed_at: updatedAt } });
     }
 
     if (op === "tick") {
