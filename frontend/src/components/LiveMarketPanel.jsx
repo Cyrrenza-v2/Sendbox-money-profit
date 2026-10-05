@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabaseClient";
 
-const DERIV_PUBLIC_ENDPOINTS = ["wss:" + "//api.derivws.com/trading/v1/options/ws/public", "wss:" + "//ws.binaryws.com/websockets/v3"];
-const DERIV_DISCOVERY_TIMEOUT_MS = 30000;
-const DERIV_RETRY_BASE_MS = 1500;
+const DERIV_PUBLIC_ENDPOINTS = [
+  "wss:" + "//ws.binaryws.com/websockets/v3",
+  "wss:" + "//api.derivws.com/trading/v1/options/ws/public",
+  "wss:" + "//ws.derivws.com/websockets/v3?app_id=1089"
+];
+const DERIV_DISCOVERY_TIMEOUT_MS = 20000;
+const DERIV_RETRY_BASE_MS = 2000;
 
 export default function LiveMarketPanel({ compact = false, selectedSymbol = null, onSymbolChange, onPriceChange, onOpenTerminal }) {
   const [markets, setMarkets] = useState([]);
@@ -111,7 +115,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         if (!symbolsLoaded && !disposed) {
           scheduleNextEndpoint("Deriv connected too slowly or did not return its active-symbol list. Allow WebSocket traffic on your network.");
         }
-      }, 12000);
+      }, DERIV_DISCOVERY_TIMEOUT_MS);
 
       socket.onopen = () => {
         if (disposed) return;
