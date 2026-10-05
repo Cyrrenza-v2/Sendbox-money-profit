@@ -25,6 +25,7 @@ export default function ConnectDeriv() {
   const [balanceResult, setBalanceResult] = useState(null);
   const [demoBalanceBusy, setDemoBalanceBusy] = useState(false);
   const [demoBalanceResult, setDemoBalanceResult] = useState(null);
+  const [realAccountResult, setRealAccountResult] = useState(null);
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
@@ -151,6 +152,7 @@ export default function ConnectDeriv() {
         ws.onerror = () => finish(reject, new Error("Deriv issued a session, but the authenticated real WebSocket could not be opened."));
       });
 
+      setRealAccountResult(data.account || null);
       setSessionStatus("VERIFIED");
       await load();
       await syncLiveBalance();
@@ -282,14 +284,14 @@ export default function ConnectDeriv() {
           </div>
         )}
 
-        {isReal && (
+        {(isReal || realAccountResult) && (
           <>
             <div className="success-box" style={{ marginTop: 16 }}>
-              <b>REAL TRADING CHANNEL</b>
-              <p style={{ margin: "6px 0 0" }}>Current status: <b>{sessionStatus}</b>. Verification opens the authenticated real Deriv WebSocket only; it does not place a trade or enable trading.</p>
+              <b>REAL ACCOUNT — READ ONLY</b>
+              <p style={{ margin: "6px 0 0" }}>Current status: <b>{sessionStatus}</b>. This verifies the authenticated real Deriv WebSocket and account identity only; it does not place a trade or enable live execution.</p>
             </div>
             <button className="primary" onClick={verifyRealSession} disabled={busySession}>
-              {busySession ? "VERIFYING REAL CHANNEL…" : "VERIFY REAL TRADING CHANNEL"}
+              {busySession ? "VERIFYING REAL ACCOUNT…" : "RECONNECT / VERIFY REAL ACCOUNT"}
             </button>
 
             <div className="success-box" style={{ marginTop: 16 }}>
@@ -307,19 +309,23 @@ export default function ConnectDeriv() {
               )}
             </div>
             <button className="primary" onClick={syncLiveBalance} disabled={balanceBusy}>
-              {balanceBusy ? "RECONCILING LIVE BALANCE…" : "SYNC LIVE BALANCE"}
+              {balanceBusy ? "SYNCING REAL ACCOUNT…" : "SYNC REAL ACCOUNT + WALLET"}
             </button>
           </>
         )}
 
-        {!isDemo && !isReal && (
+        {!isDemo && !isReal && !realAccountResult && (
           <div className="success-box" style={{ marginTop: 16 }}>
-            Account type has not been verified. Reconnect Deriv to refresh the account list; real trading remains disabled until the exact account is identified and independently verified.
+            <b>REAL ACCOUNT CONNECTION</b>
+            <p style={{ margin: "6px 0 10px" }}>Your Demo connection is separate. Use the control below to discover and verify an authorized Deriv API real account. The browser receives only a short-lived WebSocket session; permanent credentials remain server-side.</p>
+            <button className="primary" onClick={verifyRealSession} disabled={busySession}>
+              {busySession ? "VERIFYING REAL ACCOUNT…" : "CONNECT / VERIFY REAL ACCOUNT"}
+            </button>
           </div>
         )}
 
         <button className="secondary-btn" onClick={connect} disabled={status === "STARTING OAUTH"}>
-          {status === "STARTING OAUTH" ? "CONNECTING…" : "CONNECT / REFRESH DERIV"}
+          {status === "STARTING OAUTH" ? "CONNECTING…" : "CONNECT / REFRESH DERIV OAUTH"}
         </button>
         <button className="secondary-btn" onClick={() => navigate("/")}>BACK TO COMMAND CENTER</button>
       </section>
