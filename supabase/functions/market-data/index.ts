@@ -92,23 +92,56 @@ function normalizeMarket(item: any) {
   };
 }
 
-function extractTradingTimeSymbols(node:any, parents:string[] = [], out:Map<string,any> = new Map()) {
+function extractTradingTimeSymbols(node:any, marketName = "", submarketName = "", out:Map<string,any> = new Map()) {
   if (!node || typeof node !== "object") return out;
   if (Array.isArray(node)) {
-    for (const value of node) extractTradingTimeSymbols(value, parents, out);
+    for (const value of node) extractTradingTimeSymbols(value, marketName, submarketName, out);
     return out;
   }
+
+  // Deriv trading_times is hierarchical: markets[] -> submarkets[] -> symbols[].
+  // Each symbol entry carries its own { name, symbol, times, trading_days, events }.
+  if (Array.isArray((node as any).markets)) {
+    for (const market of (node as any).markets) {
+      const nextMarket = String(market?.name || marketName || "").trim();
+      extractTradingTimeSymbols(market, nextMarket, "", out);
+    }
+    return out;
+  }
+  if (Array.isArray((node as any).submarkets)) {
+    for (const submarket of (node as any).submarkets) {
+      const nextSubmarket = String(submarket?.name || submarketName || "").trim();
+      extractTradingTimeSymbols(submarket, marketName, nextSubmarket, out);
+    }
+    return out;
+  }
+  if (Array.isArray((node as any).symbols)) {
+    for (const symbol of (node as any).symbols) {
+      const normalized = normalizeMarket({
+        symbol: symbol?.symbol,
+        display_name: symbol?.name || symbol?.symbol,
+        market_display_name: marketName,
+        submarket_display_name: submarketName,
+        market: marketName,
+        submarket: submarketName
+      });
+      if (normalized?.symbol) out.set(normalized.symbol, normalized);
+    }
+    return out;
+  }
+
+  // Defensive fallback for future response shapes.
   for (const [key, value] of Object.entries(node)) {
     if (!value || typeof value !== "object") continue;
-    const nextParents = [...parents, key];
     const lowerKeys = Object.keys(value).map(k => k.toLowerCase());
     const looksLikeSchedule = lowerKeys.some(k => ["open","close","times","trading_days","events"].includes(k));
-    const hasTimesObject = value.times && typeof value.times === "object";
+    const hasTimesObject = (value as any).times && typeof (value as any).times === "object";
     const isSymbolKey = /^[A-Za-z0-9_]{2,30}$/.test(key) && !["open","close","times","trading_days","events"].includes(key.toLowerCase());
     if (isSymbolKey && (looksLikeSchedule || hasTimesObject)) {
-      out.set(key, { symbol: key, name: key, market: parents.at(-2) || parents.at(-1) || "", subgroup: parents.at(-1) || "" });
+      const normalized = normalizeMarket({ symbol: key, display_name: key, market: marketName, submarket: submarketName });
+      if (normalized?.symbol) out.set(normalized.symbol, normalized);
     }
-    extractTradingTimeSymbols(value, nextParents, out);
+    extractTradingTimeSymbols(value, marketName, submarketName, out);
   }
   return out;
 }
