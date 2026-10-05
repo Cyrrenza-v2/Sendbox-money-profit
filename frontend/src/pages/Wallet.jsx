@@ -160,7 +160,8 @@ export default function Wallet() {
           <div className="vel-state">
             <div className="vel-state-mark">—</div>
             <h3>Real trading account not connected</h3>
-            <p>Connect and verify the Deriv real account from Connections / Deriv, then synchronize the live account and wallet here.</p>\n            <button className="button primary" onClick={syncRealAccount} disabled={syncBusy}>{syncBusy ? "SYNCING REAL ACCOUNT…" : "SYNC REAL ACCOUNT + WALLET"}</button>
+            <p>Connect and verify the Deriv real account from Connections / Deriv, then synchronize the live account and wallet here.</p>
+            <button className="button primary" onClick={syncRealAccount} disabled={syncBusy}>{syncBusy ? "SYNCING REAL ACCOUNT…" : "SYNC REAL ACCOUNT + WALLET"}</button>
           </div>
         </div>
       )}
@@ -206,7 +207,8 @@ export default function Wallet() {
             </div>
           ) : (
             <>
-              <section className="vel-panel wallet-actions">\n                <button className="button secondary" onClick={syncRealAccount} disabled={syncBusy}>{syncBusy ? "SYNCING…" : "SYNC LIVE ACCOUNT + WALLET"}</button>
+              <section className="vel-panel wallet-actions">
+                <button className="button secondary" onClick={syncRealAccount} disabled={syncBusy}>{syncBusy ? "SYNCING…" : "SYNC LIVE ACCOUNT + WALLET"}</button>
                 <div className="vel-panel-title">WITHDRAW REALIZED PROFIT</div>
                 <div className="wallet-security-note">
                   <span>SEND BOX CONTROLLED</span>
