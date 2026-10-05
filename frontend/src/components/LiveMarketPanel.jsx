@@ -106,7 +106,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
 
     const loadServerCatalog = async () => {
       try {
-        const { data, error: invokeError } = await supabase.functions.invoke("trading-service", {
+        const { data, error: invokeError } = await supabase.functions.invoke("market-data", {
           body: { operation: "catalog" }
         });
         if (invokeError) throw invokeError;
@@ -310,8 +310,8 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       };
     };
 
-    loadServerCatalog().finally(() => {
-      if (!disposed) connect();
+    loadServerCatalog().then(serverMarkets => {
+      if (!disposed && !serverMarkets) connect();
     });
 
     return () => {
