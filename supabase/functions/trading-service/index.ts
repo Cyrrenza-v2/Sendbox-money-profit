@@ -513,7 +513,7 @@ async function handle(userId: string, body: any) {
 
     // A balance is the minimum required identity/state signal. If it failed,
     // surface the failure rather than inventing a zero balance.
-    if (!balance?.balance) {
+    if (!balance?.balance || !Number.isFinite(Number(balance.balance.balance))) {
       throw new Error(warnings[0]?.error || "REAL_BALANCE_UNAVAILABLE");
     }
 
