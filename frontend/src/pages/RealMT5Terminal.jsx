@@ -126,6 +126,56 @@ export default function RealMT5Terminal(){
    return()=>{dead=true;clearTimeout(retryTimer);try{ws?.close()}catch{}historySocketRef.current=null};
  },[symbol,tf]);
 
+
+ useEffect(()=>{
+   let dead=false,ws=null,retryTimer=null,refreshTimer=null;
+   const connect=async()=>{
+     if(dead)return;
+     try{
+       setFeed("CONNECTING_REAL_MARKET");
+       const session=await invoke("deriv-real-session",{account_id:account?.account?.account_id||undefined});
+       const url=session?.websocket?.url;
+       if(!url)throw new Error("REAL_MARKET_SESSION_UNAVAILABLE");
+       ws=new WebSocket(url);
+       ws.onopen=()=>{
+         if(dead){try{ws.close()}catch{};return}
+         setFeed("LIVE_REAL_MARKET");
+         ws.send(JSON.stringify({ticks:symbol,subscribe:1,req_id:91001}));
+         clearTimeout(refreshTimer);
+         refreshTimer=setTimeout(()=>{try{ws.close()}catch{}},90000);
+       };
+       ws.onmessage=e=>{
+         try{
+           const m=JSON.parse(e.data);
+           if(m.error){setFeed("REAL_MARKET_RECONNECTING");return}
+           if(m.msg_type==="tick"&&m.tick?.symbol===symbol)onTick(m.tick);
+         }catch{}
+       };
+       ws.onerror=()=>setFeed("REAL_MARKET_RECONNECTING");
+       ws.onclose=()=>{
+         clearTimeout(refreshTimer);
+         if(!dead){
+           setFeed("REAL_MARKET_RECONNECTING");
+           clearTimeout(retryTimer);
+           retryTimer=setTimeout(connect,1500);
+         }
+       };
+     }catch(e){
+       if(dead)return;
+       setFeed("REAL_MARKET_RECONNECTING");
+       clearTimeout(retryTimer);
+       retryTimer=setTimeout(connect,2000);
+     }
+   };
+   connect();
+   return()=>{
+     dead=true;
+     clearTimeout(retryTimer);
+     clearTimeout(refreshTimer);
+     try{ws?.close()}catch{}
+   };
+ },[symbol,account?.account?.account_id]);
+
  const onTick=t=>{
    const q=Number(t?.quote),epoch=Number(t?.epoch);
    if(!Number.isFinite(q)||!Number.isFinite(epoch))return;
@@ -142,10 +192,10 @@ export default function RealMT5Terminal(){
   <Sidebar isOpen={side} onClose={()=>setSide(false)}/>
   <div className="app-main"><header className="topbar"><button className="menu-button" onClick={()=>setSide(true)}>☰</button><span className="topbar-brand">VELTRION REAL ACCOUNT</span><span className="admin-badge real-badge">● READ ONLY</span></header>
   <main className="content vt-page">
-   <header className="vt-heading"><div><span className="eyebrow real-eyebrow">PHASE 2 / DERIV REAL</span><h1>Real Account — Read Only</h1><p>Authenticated Deriv account, live market data, positions, orders/history and reconciliation. Temporary connection loss never clears the last valid account state.</p></div><div className="vt-header-actions"><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}><i/> {feed==="LIVE"?"LIVE MARKET DATA":feed}</span>{account?.stale&&<span className="vt-feed">LAST VERIFIED SNAPSHOT</span>}</div></header>
+   <header className="vt-heading"><div><span className="eyebrow real-eyebrow">PHASE 2 / DERIV REAL</span><h1>Real Account — Read Only</h1><p>Authenticated Deriv account, live market data, positions, orders/history and reconciliation. Temporary connection loss never clears the last valid account state.</p></div><div className="vt-header-actions"><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}><i/> {feed==="LIVE_REAL_MARKET"||feed==="LIVE"?"LIVE REAL MARKET DATA":feed}</span>{account?.stale&&<span className="vt-feed">LAST VERIFIED SNAPSHOT</span>}</div></header>
    {error&&<div className="market-detail-note">Connection warning: {error} · Retaining last valid data and retrying automatically.</div>}
    <div className="market-account-strip"><div className="market-account-card"><span>REAL BALANCE</span><strong>{account?.currency||"USD"} {fmt(balance,2)}</strong><small>{account?.loginid||account?.login||"Real account"} · synced {safeTime}</small></div><div className="market-account-card"><span>EQUITY</span><strong>{account?.currency||"USD"} {fmt(eq,2)}</strong><small>Server-reconciled</small></div><div className="market-account-card market-account-state"><span>PORTFOLIO SYNC</span><strong>{syncStatus}</strong><small>{syncOpen} open positions · {syncClosed} closed records synced</small></div></div>
-   <LiveMarketPanel selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={onTick}/>
+   <LiveMarketPanel selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={()=>{}}/>
    <section className="vt-panel vt-chart-panel"><div className="vt-panel-head"><div><h2>{symbol} Live Chart</h2><p>Deriv OHLC history + current tick stream</p></div><div className="vt-timeframes">{TIMEFRAMES.map(x=><button key={x.seconds} className={tf===x.seconds?"active":""} onClick={()=>setTf(x.seconds)}>{x.label}</button>)}</div></div><Chart candles={candles} price={price} symbol={symbol}/></section>
    <section className="vt-panel vt-tick-tape"><div className="vt-section-title"><div><h2>Live Tick Tape</h2><p>Real-time quotes for the selected market</p></div><span className="vt-ai-tag">{ticks.length} TICKS</span></div><div className="vt-tick-grid">{ticks.slice(0,20).map((t,i)=><div className="vt-tick-row" key={t.epoch+"-"+i}><span>{new Date(t.epoch*1000).toLocaleTimeString()}</span><strong>{fmt(t.quote,8)}</strong><small>{i===0?"LATEST":"TICK"}</small></div>)}</div>{!ticks.length&&<div className="vt-empty">Waiting for live ticks…</div>}</section>
    <section className="vt-panel"><div className="vt-section-title"><div><h2>Open Real Positions</h2><p>Authenticated Deriv portfolio</p></div><span className="vt-ai-tag">READ ONLY</span></div>{portfolio.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Contract</th><th>Market</th><th>Buy</th><th>Current</th><th>P/L</th></tr></thead><tbody>{portfolio.map(p=><tr key={p.contract_id||p.id}><td>{p.external_position_id||"—"}</td><td>{p.symbol||"—"}</td><td>{p.entry_price??"—"}</td><td>{p.current_price??"—"}</td><td className={Number(p.unrealized_pnl)>=0?"vt-positive":"vt-negative"}>{p.unrealized_pnl??"—"}</td></tr>)}</tbody></table></div>:<div className="vt-empty">No open real positions returned by Deriv.</div>}</section>
