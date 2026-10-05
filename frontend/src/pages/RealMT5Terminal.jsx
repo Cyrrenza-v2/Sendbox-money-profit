@@ -33,6 +33,7 @@ export default function RealMT5Terminal(){
  const [side,setSide]=useState(false),[symbol,setSymbol]=useState(initialSymbol),[price,setPrice]=useState(null),[feed,setFeed]=useState("CONNECTING");
  const [candles,setCandles]=useState([]),[ticks,setTicks]=useState([]),[tf,setTf]=useState(300),[account,setAccount]=useState(null),[portfolio,setPortfolio]=useState([]),[history,setHistory]=useState([]),[statements,setStatements]=useState([]);
  const historySocketRef=useRef(null),refreshBusy=useRef(false),retryRef=useRef(null);
+ const lastGoodSnapshotRef=useRef(null),refreshDelayRef=useRef(15000);
  const [error,setError]=useState(""),[lastSync,setLastSync]=useState(null);
 
  const refresh=async()=>{
@@ -62,9 +63,42 @@ export default function RealMT5Terminal(){
 
  useEffect(()=>{
    let dead=false;
-   const run=async()=>{if(dead)return;await refresh();if(!dead)retryRef.current=setTimeout(run,15000)};
+   let scheduled=null;
+
+   const schedule=(delay=refreshDelayRef.current)=>{
+     if(dead)return;
+     clearTimeout(scheduled);
+     scheduled=setTimeout(async()=>{
+       if(dead)return;
+       await refresh();
+       schedule();
+     },delay);
+   };
+
+   const run=async()=>{
+     await refresh();
+     schedule();
+   };
+
+   const wake=async()=>{
+     if(dead)return;
+     await refresh();
+     schedule();
+   };
+
    run();
-   return()=>{dead=true;clearTimeout(retryRef.current)};
+   const onVisibility=()=>{if(!document.hidden)wake()};
+   const onFocus=()=>wake();
+   document.addEventListener("visibilitychange",onVisibility);
+   window.addEventListener("focus",onFocus);
+
+   return()=>{
+     dead=true;
+     clearTimeout(scheduled);
+     clearTimeout(retryRef.current);
+     document.removeEventListener("visibilitychange",onVisibility);
+     window.removeEventListener("focus",onFocus);
+   };
  },[]);
 
  useEffect(()=>{
@@ -105,7 +139,7 @@ export default function RealMT5Terminal(){
   <Sidebar isOpen={side} onClose={()=>setSide(false)}/>
   <div className="app-main"><header className="topbar"><button className="menu-button" onClick={()=>setSide(true)}>☰</button><span className="topbar-brand">VELTRION REAL ACCOUNT</span><span className="admin-badge real-badge">● READ ONLY</span></header>
   <main className="content vt-page">
-   <header className="vt-heading"><div><span className="eyebrow real-eyebrow">PHASE 2 / DERIV REAL</span><h1>Real Account — Read Only</h1><p>Authenticated Deriv account, live market data, positions, orders/history and reconciliation. Temporary connection loss never clears the last valid account state.</p></div><div className="vt-header-actions"><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}><i/> {feed==="LIVE"?"LIVE MARKET DATA":feed}</span></div></header>
+   <header className="vt-heading"><div><span className="eyebrow real-eyebrow">PHASE 2 / DERIV REAL</span><h1>Real Account — Read Only</h1><p>Authenticated Deriv account, live market data, positions, orders/history and reconciliation. Temporary connection loss never clears the last valid account state.</p></div><div className="vt-header-actions"><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}><i/> {feed==="LIVE"?"LIVE MARKET DATA":feed}</span>{account?.stale&&<span className="vt-feed">LAST VERIFIED SNAPSHOT</span>}</div></header>
    {error&&<div className="market-detail-note">Connection warning: {error} · Retaining last valid data and retrying automatically.</div>}
    <div className="market-account-strip"><div className="market-account-card"><span>REAL BALANCE</span><strong>{account?.currency||"USD"} {fmt(balance,2)}</strong><small>{account?.loginid||account?.login||"Real account"} · synced {safeTime}</small></div><div className="market-account-card"><span>EQUITY</span><strong>{account?.currency||"USD"} {fmt(eq,2)}</strong><small>Server-reconciled</small></div><div className="market-account-card market-account-state"><span>PORTFOLIO SYNC</span><strong>{s?.supabase_sync?.status||"PENDING"}</strong><small>{s?.supabase_sync?.open_positions??0} open positions · {s?.supabase_sync?.closed_orders??0} closed records synced</small></div></div>
    <LiveMarketPanel selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={onTick}/>
