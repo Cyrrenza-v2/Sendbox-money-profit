@@ -10,7 +10,9 @@ export default function Wallet() {
     error: "",
     account: null,
     wallet: null,
-    withdrawals: []
+    withdrawals: [],
+    sandboxProfit: 0,
+    sandboxTrades: 0
   });
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [destination, setDestination] = useState("");
@@ -31,8 +33,14 @@ export default function Wallet() {
         .eq("user_id", user.id)
         .maybeSingle();
       if (accountError) throw accountError;
+      const { data: sandboxRows, error: sandboxError } = await supabase
+        .from("sandbox_trades")
+        .select("realized_pnl");
+      if (sandboxError) throw sandboxError;
+      const sandboxProfit = (sandboxRows || []).reduce((sum, row) => sum + Number(row.realized_pnl || 0), 0);
+
       if (!account) {
-        setState({ loading: false, error: "", account: null, wallet: null, withdrawals: [] });
+        setState({ loading: false, error: "", account: null, wallet: null, withdrawals: [], sandboxProfit, sandboxTrades: (sandboxRows || []).length });
         return;
       }
 
@@ -43,7 +51,7 @@ export default function Wallet() {
         .maybeSingle();
       if (walletError) throw walletError;
       if (!wallet) {
-        setState({ loading: false, error: "", account, wallet: null, withdrawals: [] });
+        setState({ loading: false, error: "", account, wallet: null, withdrawals: [], sandboxProfit, sandboxTrades: (sandboxRows || []).length });
         return;
       }
 
@@ -60,7 +68,9 @@ export default function Wallet() {
         error: "",
         account,
         wallet,
-        withdrawals: withdrawals || []
+        withdrawals: withdrawals || [],
+        sandboxProfit,
+        sandboxTrades: (sandboxRows || []).length
       });
     } catch (e) {
       setState(s => ({
@@ -122,7 +132,7 @@ export default function Wallet() {
         <div>
           <div className="vel-eyebrow">VELTRION / WALLET</div>
           <h1>Profit Wallet</h1>
-          <p>Tracks realized Sendbox trading profits and controlled withdrawals. VELTRION does not accept deposits.</p>
+          <p>Tracks verified real-trading profits and controlled withdrawals. Sandbox results are displayed separately and are not treated as withdrawable funds.</p>
         </div>
         <span className="vel-data-source">SEND BOX PROFIT WALLET · WITHDRAWAL CONTROLLED</span>
       </div>
@@ -143,6 +153,12 @@ export default function Wallet() {
       {state.account && (
         <>
           <div className="metric-grid wallet-metrics">
+          <div className="metric-card">
+            <small>SANDBOX REALIZED PROFIT</small>
+            <strong>{money(state.sandboxProfit)}</strong>
+            <span>{state.sandboxTrades} simulated trades · not withdrawable</span>
+          </div>
+
             <div className="metric-card">
               <small>AVAILABLE PROFIT</small>
               <strong>{money(available, wallet?.currency || state.account.currency)}</strong>
