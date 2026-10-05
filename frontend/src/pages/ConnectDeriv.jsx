@@ -26,6 +26,7 @@ export default function ConnectDeriv() {
   const [demoBalanceBusy, setDemoBalanceBusy] = useState(false);
   const [demoBalanceResult, setDemoBalanceResult] = useState(null);
   const [realAccountResult, setRealAccountResult] = useState(null);
+  const [realAccount, setRealAccount] = useState(null);
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
@@ -53,6 +54,17 @@ export default function ConnectDeriv() {
       setAccount(data || null);
       setStatus(String(data?.status || "NOT CONNECTED").toUpperCase());
       if (data?.last_error) setError(String(data.last_error));
+
+      const { data: realProviderAccount, error: realProviderError } = await supabase
+        .from("deriv_accounts")
+        .select("deriv_account_id,account_type,status,currency,updated_at")
+        .eq("user_id", session.user.id)
+        .eq("account_type", "real")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      setRealAccount(realProviderError ? null : realProviderAccount || null);
 
       if (data?.deriv_loginid) {
         const { data: providerAccount, error: providerError } = await supabase
@@ -128,7 +140,7 @@ export default function ConnectDeriv() {
 
       setSessionStatus("ISSUING SESSION");
       const { data, error: invokeError } = await supabase.functions.invoke("deriv-real-session", {
-        body: { account_id: account?.deriv_loginid || undefined },
+        body: { account_id: realAccount?.deriv_account_id || (isReal ? account?.deriv_loginid : undefined) },
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
       if (invokeError) throw new Error(await readFunctionError(invokeError, "Deriv real-session request failed."));
@@ -283,6 +295,35 @@ export default function ConnectDeriv() {
             </button>
           </div>
         )}
+
+        <div className="success-box" style={{ marginTop: 16 }}>
+          <b>DERIV REAL ACCOUNT — AVAILABLE</b>
+          <p style={{ margin: "6px 0 10px" }}>
+            {realAccount?.deriv_account_id
+              ? `Authorized real account ${realAccount.deriv_account_id} is stored server-side and ready for read-only connection verification.`
+              : "No real Deriv account is currently registered for this VELTRION user. Reconnect Deriv OAuth to discover an authorized real account."}
+          </p>
+          {realAccount?.deriv_account_id && (
+            <div className="connection-grid" style={{ marginBottom: 12 }}>
+              <div className="health-card">
+                <b>REAL ACCOUNT</b>
+                <p>{realAccount.deriv_account_id}</p>
+                <small>{realAccount.currency || "USD"} · {String(realAccount.status || "unknown").toUpperCase()} · execution frozen</small>
+              </div>
+              <div className="health-card">
+                <b>REAL WALLET</b>
+                <p>{balanceResult ? `${Number(balanceResult.balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${balanceResult.currency}` : "Not synchronized yet"}</p>
+                <small>Read-only Deriv balance snapshot · never mixed with Sendbox Money</small>
+              </div>
+            </div>
+          )}
+          <button className="primary" onClick={verifyRealSession} disabled={busySession}>
+            {busySession ? "VERIFYING REAL ACCOUNT…" : "RECONNECT / VERIFY REAL ACCOUNT"}
+          </button>
+          <button className="secondary-btn" onClick={connect} disabled={status === "STARTING OAUTH"}>
+            {status === "STARTING OAUTH" ? "OPENING DERIV OAUTH…" : "RECONNECT DERIV OAUTH"}
+          </button>
+        </div>
 
         {(isReal || realAccountResult) && (
           <>
