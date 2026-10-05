@@ -32,7 +32,7 @@ export default function RealMT5Terminal(){
  const initialSymbol=params.get("symbol")||"1HZ100V";
  const [side,setSide]=useState(false),[symbol,setSymbol]=useState(initialSymbol),[price,setPrice]=useState(null),[feed,setFeed]=useState("CONNECTING");
  const [candles,setCandles]=useState([]),[ticks,setTicks]=useState([]),[tf,setTf]=useState(300),[account,setAccount]=useState(null),[portfolio,setPortfolio]=useState([]),[history,setHistory]=useState([]),[statements,setStatements]=useState([]);
- const historySocketRef=useRef(null),refreshBusy=useRef(false),retryRef=useRef(null);
+ const historySocketRef=useRef(null),refreshBusy=useRef(false),retryRef=useRef(null),lastTickRef=useRef(0),tickWatchdogRef=useRef(null);
  const lastGoodSnapshotRef=useRef(null),refreshDelayRef=useRef(15000);
  const [error,setError]=useState(""),[lastSync,setLastSync]=useState(null),[syncStatus,setSyncStatus]=useState("PENDING"),[syncOpen,setSyncOpen]=useState(0),[syncClosed,setSyncClosed]=useState(0);
 
@@ -140,20 +140,29 @@ export default function RealMT5Terminal(){
        ws.onopen=()=>{
          if(dead){try{ws.close()}catch{};return}
          setFeed("LIVE_REAL_MARKET");
+         lastTickRef.current=Date.now();
          ws.send(JSON.stringify({ticks:symbol,subscribe:1,req_id:91001}));
          clearTimeout(refreshTimer);
+         clearTimeout(tickWatchdogRef.current);
          refreshTimer=setTimeout(()=>{try{ws.close()}catch{}},90000);
+         tickWatchdogRef.current=setTimeout(()=>{try{ws.close()}catch{}},10000);
        };
        ws.onmessage=e=>{
          try{
            const m=JSON.parse(e.data);
            if(m.error){setFeed("REAL_MARKET_RECONNECTING");return}
-           if(m.msg_type==="tick"&&m.tick?.symbol===symbol)onTick(m.tick);
+           if(m.msg_type==="tick"&&m.tick?.symbol===symbol){
+             lastTickRef.current=Date.now();
+             clearTimeout(tickWatchdogRef.current);
+             tickWatchdogRef.current=setTimeout(()=>{if(Date.now()-lastTickRef.current>=9000){setFeed("REAL_MARKET_RECONNECTING");try{ws?.close()}catch{}}},9000);
+             onTick(m.tick);
+           }
          }catch{}
        };
        ws.onerror=()=>setFeed("REAL_MARKET_RECONNECTING");
        ws.onclose=()=>{
          clearTimeout(refreshTimer);
+         clearTimeout(tickWatchdogRef.current);
          if(!dead){
            setFeed("REAL_MARKET_RECONNECTING");
            clearTimeout(retryTimer);
@@ -172,6 +181,7 @@ export default function RealMT5Terminal(){
      dead=true;
      clearTimeout(retryTimer);
      clearTimeout(refreshTimer);
+     clearTimeout(tickWatchdogRef.current);
      try{ws?.close()}catch{}
    };
  },[symbol,account?.account?.account_id]);
