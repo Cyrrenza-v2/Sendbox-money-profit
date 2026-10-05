@@ -41,6 +41,7 @@ export default function Home(){
     <button className="vel-home-primary-card" onClick={()=>navigate("/app/trading/markets")}><span className="home-card-kicker">TRADE</span><strong>Markets</strong><small>Select a market first, then choose your terminal.</small><b>Open Markets →</b></button>
     <button className="vel-home-primary-card" onClick={()=>navigate("/app/wallet/overview")}><span className="home-card-kicker">MONEY</span><strong>Wallet</strong><small>Balances and transaction activity, separate from positions.</small><b>Open Wallet →</b></button>
     <button className="vel-home-primary-card" onClick={()=>navigate("/app/trading/positions")}><span className="home-card-kicker">ACCOUNT</span><strong>Portfolio</strong><small>Accounts, balances, positions, orders and P/L.</small><b>Open Portfolio →</b></button>
+    <button className="vel-home-primary-card" onClick={()=>navigate("/app/deriv/account")}><span className="home-card-kicker">DEMO CONNECTION</span><strong>Connect Demo Account</strong><small>Authorize a Deriv API demo account and verify its virtual balance.</small><b>Connect Demo →</b></button>
    </section>
    <section className="vel-panel home-terminal-panel">
     <div className="vel-panel-title">TERMINALS <span>SECONDARY TRADING EXPERIENCE</span></div>
