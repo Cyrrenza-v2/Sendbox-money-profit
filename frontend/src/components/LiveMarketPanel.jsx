@@ -140,7 +140,8 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             symbol: item?.symbol,
             name: item?.name || item?.symbol,
             market: item?.market || "Other",
-            subgroup: item?.subgroup || ""
+            subgroup: item?.subgroup || "",
+            isActive: item?.isActive !== false
           }))
           .filter(item => item.symbol)
           .map(item => [item.symbol, item])
@@ -426,6 +427,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       return matchesCategory && matchesQuery;
     });
   }, [markets, marketFilter, query]);
+  const activeMarketCount = useMemo(() => markets.filter(item => item.isActive !== false).length, [markets]);
   const focusedMarket = markets.find(item => item.symbol === focusedSymbol);
 
   return <section className="panel market-panel">
@@ -438,7 +440,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       <select value={marketFilter} onChange={event => setMarketFilter(event.target.value)}>
         {categories.map(category => <option key={category} value={category}>{category}</option>)}
       </select>
-      <span className="market-count">{loading ? "Discovering all Deriv markets…" : `${visibleMarkets.length} shown / ${markets.length} active`}</span>
+      <span className="market-count">{loading ? "Discovering all Deriv markets…" : `${visibleMarkets.length} shown / ${markets.length} total · ${activeMarketCount} active now`}</span>
     </div>
     {error && <div className="market-error" role="status">{error}</div>}
     <div className={compact ? "market-grid compact" : "market-grid"}>
@@ -446,7 +448,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         const tick = ticks[item.symbol];
         return <button key={item.symbol} className={(selectedSymbol === item.symbol || focusedSymbol === item.symbol) ? "market-card selected" : "market-card"} onClick={() => { setFocusedSymbol(item.symbol); onSymbolChange?.(item.symbol); }} title={item.name}>
           <span>{item.name}</span>
-          <small>{item.symbol} • {item.market}</small>
+          <small>{item.symbol} • {item.market} • {item.isActive === false ? "scheduled" : "active now"}</small>
           <strong>{tick && Number.isFinite(tick.quote) ? tick.quote.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "—"}</strong>
           <small>{tick ? new Date(tick.epoch * 1000).toLocaleTimeString() : "waiting for tick"}</small>
         </button>;
@@ -455,6 +457,6 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
     {!compact && focusedMarket && <div className="market-detail"><div className="market-detail-heading"><div><span className="market-detail-kicker">SELECTED MARKET</span><h3>{focusedMarket.name}</h3><p>{focusedMarket.symbol} · {focusedMarket.market}</p></div><div className="market-detail-quote"><small>Latest public quote</small><strong>{ticks[focusedMarket.symbol] && Number.isFinite(ticks[focusedMarket.symbol].quote) ? ticks[focusedMarket.symbol].quote.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "Waiting for quote…"} </strong><small>{ticks[focusedMarket.symbol] ? new Date(ticks[focusedMarket.symbol].epoch * 1000).toLocaleTimeString() : "Feed initializing"}</small></div></div><div className="market-detail-actions"><button className="market-open-terminal" onClick={() => onOpenTerminal?.(focusedMarket.symbol)}>Open Web Terminal <span>→</span></button><button className="market-mt5-placeholder" disabled title="MT5 integration is not available yet">MT5 Terminal · Coming later</button></div><p className="market-detail-note">Choose a market here, review its current public price, then open the terminal to view candles and place sandbox orders. Selecting a market does not place an order.</p></div>}
     {!loading && discoveryComplete && visibleMarkets.length === 0 && <div className="market-empty">No active Deriv symbols match this filter.</div>}
     {!loading && !discoveryComplete && markets.length === 0 && <div className="market-empty">Market list is unavailable until the Deriv connection succeeds. The diagnostic above explains the latest failure.</div>}
-    <div className="market-footnote">Dynamically discovered from Deriv <code>active_symbols=full</code>. The market list is synchronized to Supabase. If a browser WebSocket is unavailable, the authenticated Supabase Edge Function securely relays public Deriv market data instead. Public live market data only; trading credentials remain server-side.</div>
+    <div className="market-footnote">Dynamically discovered from Deriv <code>active_symbols=full</code> plus the complete <code>trading_times=today</code> symbol hierarchy. The market list is synchronized to Supabase. If a browser WebSocket is unavailable, the authenticated Supabase Edge Function securely relays public Deriv market data instead. Public live market data only; trading credentials remain server-side.</div>
   </section>;
 }
