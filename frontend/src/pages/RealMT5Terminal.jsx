@@ -32,8 +32,9 @@ export default function RealMT5Terminal(){
  const initialSymbol=params.get("symbol")||"1HZ100V";
  const [side,setSide]=useState(false),[symbol,setSymbol]=useState(initialSymbol),[price,setPrice]=useState(null),[feed,setFeed]=useState("CONNECTING");
  const [candles,setCandles]=useState([]),[ticks,setTicks]=useState([]),[tf,setTf]=useState(300),[account,setAccount]=useState(null),[portfolio,setPortfolio]=useState([]),[history,setHistory]=useState([]),[statements,setStatements]=useState([]);
- const historySocketRef=useRef(null),refreshBusy=useRef(false),retryRef=useRef(null),lastTickRef=useRef(0),tickWatchdogRef=useRef(null);\n useEffect(()=>{tfRef.current=tf},[tf]);
- const lastGoodSnapshotRef=useRef(null),refreshDelayRef=useRef(15000),tfRef=useRef(300);
+ const historySocketRef=useRef(null),refreshBusy=useRef(false),retryRef=useRef(null),lastTickRef=useRef(0),tickWatchdogRef=useRef(null),tfRef=useRef(300);
+ const lastGoodSnapshotRef=useRef(null),refreshDelayRef=useRef(15000);
+ useEffect(()=>{tfRef.current=tf},[tf]);
  const [error,setError]=useState(""),[lastSync,setLastSync]=useState(null),[syncStatus,setSyncStatus]=useState("PENDING"),[syncOpen,setSyncOpen]=useState(0),[syncClosed,setSyncClosed]=useState(0);
 
  const refresh=async()=>{
