@@ -38,8 +38,9 @@ export default function TradingTerminal() {
   const [quantity,setQuantity]=useState("0.01"),[stopLoss,setStopLoss]=useState(""),[takeProfit,setTakeProfit]=useState("");
   const [e2eBusy,setE2eBusy]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[activeTab,setActiveTab]=useState("positions");
 
-  const lastMarkRef=useRef(0),priceRef=useRef(null);
+  const lastMarkRef=useRef(0),priceRef=useRef(null),timeframeRef=useRef(timeframe);
   useEffect(()=>{const requested=searchParams.get("symbol");if(requested)setSymbol(requested);},[searchParams]);
+  useEffect(()=>{timeframeRef.current=timeframe;},[timeframe]);
 
   const refresh=async()=>{const r=await sandboxEngine.snapshot();const data=r.data||{};setAccount(data.accounts?.[0]||data.account||null);setPositions(data.positions||[]);setOrders(data.orders||[]);};
   useEffect(()=>{let alive=true;refresh().catch(e=>{if(alive)setError(e.message||"Sandbox account could not be loaded.");});const timer=setInterval(()=>refresh().catch(()=>{}),5000);return()=>{alive=false;clearInterval(timer);};},[]);
@@ -47,7 +48,7 @@ export default function TradingTerminal() {
   // Load real historical OHLC candles from Deriv. The separate socket keeps the
   // chart history independent from the market-watch socket and never authorizes trades.
   useEffect(()=>{
-    let disposed=false,socket=null,retry=null,timeout=null;
+    let disposed=false,socket=null,retry=null,timeout=null,historyTimeout=null;
     setCandles([]);
     const timeframeInfo=TIMEFRAMES.find(t=>t.value===timeframe)||TIMEFRAMES[1];
     const connect=()=>{
@@ -55,19 +56,21 @@ export default function TradingTerminal() {
       try{socket=new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");}
       catch{setFeed("RECONNECTING");return;}
       timeout=setTimeout(()=>{if(!disposed&&socket?.readyState!==WebSocket.OPEN){try{socket.close();}catch{};}},10000);
+      historyTimeout=setTimeout(()=>{if(!disposed){setError("Historical candle feed timed out; reconnecting…");try{socket.close();}catch{}}},12000);
       socket.onopen=()=>{if(disposed)return;clearTimeout(timeout);socket.send(JSON.stringify({ticks_history:symbol,adjust_start_time:1,count:150,end:"latest",style:"candles",granularity:timeframeInfo.seconds,req_id:7101}));};
-      socket.onmessage=event=>{if(disposed)return;try{const message=JSON.parse(event.data);if(message.error){if(message.req_id===7101)setError("Historical candle feed: "+(message.error.message||"unavailable"));return;}if(message.req_id===7101){const history=readCandles(message);if(history.length)setCandles(history);else if(message.msg_type!=="history")setError("Deriv did not return historical candles for this market/timeframe.");}}catch{}};
+      socket.onmessage=event=>{if(disposed)return;try{const message=JSON.parse(event.data);if(message.error){if(message.req_id===7101){clearTimeout(historyTimeout);setError("Historical candle feed: "+(message.error.message||"unavailable"));try{socket.close();}catch{}}return;}if(message.req_id===7101){clearTimeout(historyTimeout);const history=readCandles(message);if(history.length){setCandles(history);setError("");}else{setError("Deriv did not return historical candles for this market/timeframe.");try{socket.close();}catch{}}}}catch{}};
       socket.onerror=()=>{if(!disposed)setFeed("RECONNECTING");};
-      socket.onclose=()=>{if(!disposed)retry=setTimeout(connect,5000);};
+      socket.onclose=()=>{clearTimeout(timeout);clearTimeout(historyTimeout);if(!disposed)retry=setTimeout(connect,2500);};
     };
     connect();
-    return()=>{disposed=true;clearTimeout(timeout);if(retry)clearTimeout(retry);try{socket?.close();}catch{};};
+    return()=>{disposed=true;clearTimeout(timeout);clearTimeout(historyTimeout);if(retry)clearTimeout(retry);try{socket?.close();}catch{};};
   },[symbol,timeframe]);
 
   const onPrice=next=>{
     const price=Number(next?.quote);if(!Number.isFinite(price))return;
     const tickValue={price,epoch:Number(next.epoch)||Date.now()/1000,pipSize:next.pipSize};priceRef.current=tickValue;setTick(tickValue);setFeed("LIVE");
-    const interval=(TIMEFRAMES.find(t=>t.value===timeframe)||TIMEFRAMES[1]).seconds;
+    const activeTimeframe=timeframeRef.current;
+    const interval=(TIMEFRAMES.find(t=>t.value===activeTimeframe)||TIMEFRAMES[1]).seconds;
     const bucket=Math.floor(tickValue.epoch/interval)*interval;
     setCandles(list=>{
       const last=list[list.length-1];
