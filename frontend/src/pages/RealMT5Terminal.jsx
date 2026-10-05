@@ -61,17 +61,22 @@ export default function RealMT5Terminal(){
  },[]);
 
  useEffect(()=>{
-   let dead=false,retryTimer=null,ws=null;
+   let dead=false,retryTimer=null,ws=null,endpointIndex=0;
+   const historyEndpoints=[
+     "wss://ws.binaryws.com/websockets/v3?app_id=1089",
+     "wss://api.derivws.com/trading/v1/options/ws/public",
+     "wss://ws.derivws.com/websockets/v3?app_id=1089"
+   ];
    setCandles([]);setFeed("LOADING_HISTORY");
    const loadHistory=()=>{
      if(dead)return;
-     try{ws=new WebSocket("wss://ws.binaryws.com/websockets/v3?app_id=1089");historySocketRef.current=ws}
-     catch{setFeed("HISTORY_RECONNECTING");retryTimer=setTimeout(loadHistory,5000);return}
+     try{ws=new WebSocket(historyEndpoints[endpointIndex]);historySocketRef.current=ws}
+     catch{endpointIndex=(endpointIndex+1)%historyEndpoints.length;setFeed("HISTORY_RECONNECTING");retryTimer=setTimeout(loadHistory,2000);return}
      const timeout=setTimeout(()=>{try{ws.close()}catch{}},12000);
      ws.onopen=()=>{setFeed(current=>current==="LIVE"?"LIVE":"WAITING_FOR_TICK");ws.send(JSON.stringify({ticks_history:symbol,adjust_start_time:1,count:180,end:"latest",style:"candles",granularity:tf,req_id:7001}))};
      ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.error){setFeed("HISTORY_RECONNECTING");return}if(m.msg_type==="history"||m.msg_type==="candles"){const raw=m.candles||m.history?.candles||[];if(raw.length){setCandles(raw.map(c=>({time:Number(c.epoch),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)})).filter(c=>[c.time,c.open,c.high,c.low,c.close].every(Number.isFinite)).sort((a,b)=>a.time-b.time).slice(-180));setFeed(current=>current==="LOADING_HISTORY"||current==="HISTORY_RECONNECTING"?"WAITING_FOR_TICK":current)}}}catch{}};
      ws.onerror=()=>setFeed("HISTORY_RECONNECTING");
-     ws.onclose=()=>{clearTimeout(timeout);if(!dead){setFeed("HISTORY_RECONNECTING");retryTimer=setTimeout(loadHistory,5000)}};
+     ws.onclose=()=>{clearTimeout(timeout);if(!dead){endpointIndex=(endpointIndex+1)%historyEndpoints.length;setFeed("HISTORY_RECONNECTING");retryTimer=setTimeout(loadHistory,2000)}};
    };
    loadHistory();
    return()=>{dead=true;clearTimeout(retryTimer);try{ws?.close()}catch{}historySocketRef.current=null};
