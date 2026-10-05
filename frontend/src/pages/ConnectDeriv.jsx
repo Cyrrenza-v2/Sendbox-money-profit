@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { supabase } from "../supabaseClient";
+import { supabase, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "../supabaseClient";
 
 async function readFunctionError(invokeError, fallback) {
   let detail = invokeError?.message || fallback;
@@ -181,8 +181,18 @@ export default function ConnectDeriv() {
       if (sessionError) throw sessionError;
       if (!session?.access_token) throw new Error("Sign in to VELTRION first.");
 
-      const { data, error } = await supabase.functions.invoke("deriv-oauth/start");
-      if (error) throw new Error(await readFunctionError(error, "Unable to start Deriv authorization."));
+      // The OAuth function exposes /start as a path, so call the Edge Function
+      // endpoint directly instead of treating "deriv-oauth/start" as a function name.
+      const response = await fetch(SUPABASE_URL + "/functions/v1/deriv-oauth/start", {
+        method: "GET",
+        headers: {
+          Authorization: "Bearer " + session.access_token,
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          Accept: "application/json",
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "Unable to start Deriv authorization.");
       if (!data?.authorization_url) throw new Error(data?.error || "Deriv OAuth authorization URL was not returned.");
       window.location.assign(data.authorization_url);
     } catch (e) {
