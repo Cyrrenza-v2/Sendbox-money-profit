@@ -33,7 +33,7 @@ async function realContext(userId: string) {
       .eq("user_id", userId)
       .maybeSingle(),
     db.schema("private").from("deriv_oauth_credentials")
-      .select("access_token,expires_at")
+      .select("access_token,refresh_token,expires_at,scopes")
       .eq("user_id", userId)
       .maybeSingle()
   ]);
@@ -41,9 +41,33 @@ async function realContext(userId: string) {
   if (credError) throw credError;
   if (!account?.deriv_account_id) throw new Error("REAL_DERIV_ACCOUNT_NOT_PROVISIONED");
   if (!cred?.access_token) throw new Error("DERIV_REAUTH_REQUIRED");
-  if (cred.expires_at && Date.parse(cred.expires_at) <= Date.now())
-    throw new Error("DERIV_ACCESS_TOKEN_EXPIRED");
-  return { account, accessToken: cred.access_token };
+  const scopes = Array.isArray(cred.scopes) ? cred.scopes.map(String) : [];
+  if (!scopes.includes("trade")) throw new Error("DERIV_TRADE_SCOPE_REQUIRED");
+  let accessToken = cred.access_token;
+  const expiresAt = cred.expires_at ? Date.parse(cred.expires_at) : 0;
+  if (expiresAt && expiresAt <= Date.now() + 120000) {
+    if (!cred.refresh_token) throw new Error("DERIV_REAUTH_REQUIRED");
+    const clientId = Deno.env.get("DERIV_OAUTH_CLIENT_ID") || Deno.env.get("DERIV_CLIENT_ID") || "34yFXgA3K5sZIE56LQI7J";
+    const refresh = await fetch("https://auth.deriv.com/oauth2/token", {
+      method: "POST",
+      headers: {"Content-Type":"application/x-www-form-urlencoded"},
+      body: new URLSearchParams({grant_type:"refresh_token",client_id:clientId,refresh_token:String(cred.refresh_token)})
+    });
+    const refreshed = await refresh.json().catch(()=>({}));
+    if (!refresh.ok || !refreshed.access_token) throw new Error("DERIV_REAUTH_REQUIRED");
+    accessToken = String(refreshed.access_token);
+    const nextExpires = refreshed.expires_in ? new Date(Date.now()+Number(refreshed.expires_in)*1000).toISOString() : null;
+    const saved = await db.schema("private").from("deriv_oauth_credentials").update({
+      access_token: accessToken,
+      refresh_token: refreshed.refresh_token || cred.refresh_token,
+      expires_at: nextExpires,
+      token_type: refreshed.token_type || "Bearer",
+      scopes: String(refreshed.scope || scopes.join(" ")).split(/[ ,]+/).filter(Boolean),
+      updated_at: new Date().toISOString()
+    }).eq("user_id", userId);
+    if (saved.error) throw saved.error;
+  }
+  return { account, accessToken };
 }
 
 async function otpUrl(accountId: string, accessToken: string) {
@@ -203,19 +227,19 @@ async function reconcileRealState(userId: string, balancePayload: any, profitPay
 
     if (existing.error) throw existing.error;
 
+    if (existing.data && existing.data.status === "CLOSED") continue;
     if (existing.data) {
-      if (existing.data.status !== "CLOSED") {
-        await db.from("real_orders").update({
-          status: "CLOSED",
-          exit_price: Number(tx.sell_price ?? tx.sell_price),
-          realized_pnl: Number(profit),
-          closed_at: tx.sell_time ? new Date(Number(tx.sell_time) * 1000).toISOString() : new Date().toISOString()
-        }).eq("id", existing.data.id);
-      }
-      continue;
+      await db.from("real_orders").update({
+        status: "CLOSED",
+        exit_price: Number(tx.sell_price ?? 0),
+        realized_pnl: Number(profit),
+        closed_at: tx.sell_time ? new Date(Number(tx.sell_time) * 1000).toISOString() : new Date().toISOString()
+      }).eq("id", existing.data.id);
     }
 
-    const inserted = await db.from("real_orders").insert({
+    const inserted = existing.data
+      ? { data: existing.data, error: null as any }
+      : await db.from("real_orders").insert({
       account_id: account.id,
       deriv_contract_id: contractId,
       client_order_id: `reconcile:${contractId}`,
