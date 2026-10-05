@@ -143,10 +143,23 @@ function normalizePublicMarket(item: any) {
 }
 
 async function realWsCall(userId: string, payload: Record<string, unknown>, expected: string) {
-  const { account, accessToken } = await realContext(userId);
-  const url = await otpUrl(String(account.deriv_account_id), accessToken);
-  return wsCall(url, payload, expected);
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const { account, accessToken } = await realContext(userId);
+      const url = await otpUrl(String(account.deriv_account_id), accessToken);
+      return await wsCall(url, payload, expected);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : "";
+      if (!/WEBSOCKET|CLOSED|TIMEOUT/.test(message) || attempt === 2) throw error;
+      await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("DERIV_WEBSOCKET_RECONNECT_FAILED");
 }
+
+const PRODUCTION_READ_ONLY_FREEZE = true;
 
 async function realSnapshotBatch(userId: string) {
   const requests = [
@@ -797,6 +810,7 @@ async function handle(userId: string, body: any) {
   }
 
   if (op === "buy") {
+    if (PRODUCTION_READ_ONLY_FREEZE) throw new Error("PRODUCTION_READ_ONLY_FREEZE");
     await tradingGate(userId);
     if (!body.proposal_id) throw new Error("PROPOSAL_ID_REQUIRED");
     if (!Number.isFinite(Number(body.price)) || Number(body.price) <= 0) throw new Error("INVALID_MAX_PRICE");
@@ -847,6 +861,7 @@ async function handle(userId: string, body: any) {
   }
 
   if (op === "sell") {
+    if (PRODUCTION_READ_ONLY_FREEZE) throw new Error("PRODUCTION_READ_ONLY_FREEZE");
     await tradingGate(userId);
     const contractId = String(body.contract_id || "").trim();
     if (!contractId) throw new Error("CONTRACT_ID_REQUIRED");
@@ -871,6 +886,7 @@ async function handle(userId: string, body: any) {
   }
 
   if (op === "auto_start") {
+    if (PRODUCTION_READ_ONLY_FREEZE) throw new Error("PRODUCTION_READ_ONLY_FREEZE");
     await tradingGate(userId);
     const template = validateAccuTemplate(body.contract_template);
     const strategyId = String(body.strategy_id || "");
@@ -903,7 +919,7 @@ Deno.serve(async req => {
     const status = [
       "REAL_TRADING_DISABLED", "REAL_ACCOUNT_INACTIVE", "REAL_ACCOUNT_EMERGENCY_STOPPED",
       "REAL_ACCOUNT_NOT_FOUND", "EMERGENCY_STOP_ACTIVE_OR_UNCONFIGURED",
-      "REAL_TRADING_CONTROL_DISABLED", "DERIV_TRADING_KILL_SWITCH",
+      "REAL_TRADING_CONTROL_DISABLED", "DERIV_TRADING_KILL_SWITCH", "PRODUCTION_READ_ONLY_FREEZE",
       "DERIV_TRADING_KILL_SWITCH_MISSING", "TRADING_SAFETY_CONTROLS_UNAVAILABLE"
     ].includes(message) ? 423 : 400;
     return json({ ok: false, error: message }, status);
