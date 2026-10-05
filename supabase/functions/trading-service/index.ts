@@ -370,8 +370,6 @@ async function handle(userId: string, body: any) {
   }
 
 
-  const op = String(body.operation || body.action || "status");
-
   if (op === "balance_reconcile") {
     const { account } = await realContext(userId);
     const balanceResponse = await realWsCall(userId, { balance: 1 }, "balance");
@@ -590,16 +588,50 @@ async function handle(userId: string, body: any) {
       throw new Error(warnings[0]?.error || "REAL_BALANCE_UNAVAILABLE");
     }
 
-    // Reconciliation is best-effort for the read-only screen. A temporary
-    // reconciliation write/API failure must not blank the account terminal.
+    // Persist the authenticated Deriv portfolio into Supabase before returning it.
+    // This keeps the Portfolio UI backed by a server-side synchronization record
+    // and gives us a durable audit trail without exposing Deriv credentials.
+    let sync = { status: "FAILED", synced_at: new Date().toISOString(), open_positions: 0, closed_orders: 0 };
+    try {
+      const { account } = await realContext(userId);
+      const livePortfolio = Array.isArray(portfolio?.portfolio?.contracts) ? portfolio.portfolio.contracts : [];
+      const liveClosed = Array.isArray(profit?.profit_table?.transactions) ? profit.profit_table.transactions : [];
+      const syncEvent = await db.from("deriv_sync_events").insert({
+        user_id: userId, deriv_account_id: account.id, event_type: "REAL_PORTFOLIO_SNAPSHOT", status: "SUCCESS",
+        payload: { source: "authenticated_deriv_websocket", balance: balance.balance, portfolio: livePortfolio, profit_table: liveClosed, statement: statement?.statement?.transactions ?? [] }
+      }).select("id").single();
+      if (syncEvent.error) throw syncEvent.error;
+      const cleared = await db.from("positions").delete().eq("user_id", userId).eq("account_id", account.id).eq("source", "deriv").eq("environment", "real");
+      if (cleared.error) throw cleared.error;
+      if (livePortfolio.length) {
+        const rows = livePortfolio.map((p: any) => {
+          const contractId = String(p.contract_id ?? p.id ?? "").trim();
+          return {
+            user_id: userId, source: "deriv", environment: "real", account_id: account.id,
+            external_position_id: contractId || crypto.randomUUID(),
+            symbol: String(p.underlying_symbol ?? p.symbol ?? "UNKNOWN"),
+            side: String(p.contract_type ?? p.direction ?? "BUY").toUpperCase().includes("PUT") ? "SELL" : "BUY",
+            quantity: Math.max(Number(p.buy_price ?? p.amount ?? 0), 0.0001),
+            entry_price: Math.max(Number(p.buy_price ?? 0), 0),
+            current_price: Math.max(Number(p.bid_price ?? p.sell_price ?? p.current_price ?? p.buy_price ?? 0), 0),
+            unrealized_pnl: Number(p.profit ?? p.profit_loss ?? 0) || 0,
+            status: "OPEN", observed_at: new Date().toISOString(), raw: p
+          };
+        });
+        const positionInsert = await db.from("positions").insert(rows);
+        if (positionInsert.error) throw positionInsert.error;
+      }
+      sync = { status: "SYNCED", synced_at: new Date().toISOString(), open_positions: livePortfolio.length, closed_orders: liveClosed.length };
+    } catch (error) {
+      warnings.push({ section: "supabase_sync", error: error instanceof Error ? error.message : "REAL_PORTFOLIO_SUPABASE_SYNC_FAILED" });
+    }
+
+    // Reconciliation is best-effort for the read-only screen.
     if (profit?.profit_table) {
       try {
         await reconcileRealState(userId, balance.balance, profit.profit_table);
       } catch (error) {
-        warnings.push({
-          section: "reconciliation",
-          error: error instanceof Error ? error.message : "REAL_RECONCILIATION_FAILED"
-        });
+        warnings.push({ section: "reconciliation", error: error instanceof Error ? error.message : "REAL_RECONCILIATION_FAILED" });
       }
     }
 
@@ -608,10 +640,10 @@ async function handle(userId: string, body: any) {
       portfolio: portfolio?.portfolio ?? { contracts: [] },
       profit_table: profit?.profit_table ?? { transactions: [] },
       statement: statement?.statement ?? { transactions: [] },
+      supabase_sync: sync,
       warnings
     };
   }
-
   if (op === "reconcile") {
     const [balance, profit] = await Promise.all([
       realWsCall(userId, { balance: 1 }, "balance"),
