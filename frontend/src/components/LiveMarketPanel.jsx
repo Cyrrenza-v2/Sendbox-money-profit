@@ -104,13 +104,19 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
   const [query, setQuery] = useState("");
   const [marketFilter, setMarketFilter] = useState("ALL");
   const [focusedSymbol, setFocusedSymbol] = useState(selectedSymbol || "");
+  const focusedSymbolRef = useRef(selectedSymbol || "");
   const selectedSymbolRef = useRef(selectedSymbol);
   const socketRef = useRef(null);
   const onPriceChangeRef = useRef(onPriceChange);
   const subscribeSymbolRef = useRef(null);
   const requestSeqRef = useRef(9000);
 
-  useEffect(() => { if (selectedSymbol) setFocusedSymbol(selectedSymbol); }, [selectedSymbol]);
+  useEffect(() => {
+    if (selectedSymbol) {
+      focusedSymbolRef.current = selectedSymbol;
+      setFocusedSymbol(selectedSymbol);
+    }
+  }, [selectedSymbol]);
   useEffect(() => { subscribeSymbolRef.current?.(focusedSymbol); }, [focusedSymbol]);
   useEffect(() => { onPriceChangeRef.current = onPriceChange; }, [onPriceChange]);
   useEffect(() => {
@@ -148,7 +154,11 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       ).values());
       if (!unique.length) throw new Error("DERIV_PUBLIC_MARKET_CATALOG_EMPTY");
       setMarkets(unique);
-      setFocusedSymbol(current => current || selectedSymbolRef.current || unique[0]?.symbol || "");
+      setFocusedSymbol(current => {
+        const next = current || selectedSymbolRef.current || unique[0]?.symbol || "";
+        focusedSymbolRef.current = next;
+        return next;
+      });
       setLoading(false);
       setDiscoveryComplete(true);
       return unique;
@@ -166,7 +176,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       setFeedMode("SERVER");
       const poll = async () => {
         if (disposed || !serverFallbackActive) return;
-        const marketSymbol = selectedSymbolRef.current || focusedSymbol;
+        const marketSymbol = selectedSymbolRef.current || focusedSymbolRef.current;
         if (marketSymbol) {
           try {
             const { data, error: invokeError } = await supabase.functions.invoke("market-data", {
@@ -397,8 +407,8 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       };
     };
 
-    loadServerCatalog().then(serverMarkets => {
-      if (!disposed && !serverMarkets) connect();
+    loadServerCatalog().then(() => {
+      if (!disposed) connect();
     });
 
     return () => {
@@ -446,7 +456,11 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
     <div className={compact ? "market-grid compact" : "market-grid"}>
       {visibleMarkets.map(item => {
         const tick = ticks[item.symbol];
-        return <button key={item.symbol} className={(selectedSymbol === item.symbol || focusedSymbol === item.symbol) ? "market-card selected" : "market-card"} onClick={() => { setFocusedSymbol(item.symbol); onSymbolChange?.(item.symbol); }} title={item.name}>
+        return <button key={item.symbol} className={(selectedSymbol === item.symbol || focusedSymbol === item.symbol) ? "market-card selected" : "market-card"} onClick={() => {
+            focusedSymbolRef.current = item.symbol;
+            setFocusedSymbol(item.symbol);
+            onSymbolChange?.(item.symbol);
+          }} title={item.name}>
           <span>{item.name}</span>
           <small>{item.symbol} • {item.market} • {item.isActive === false ? "scheduled" : "active now"}</small>
           <strong>{tick && Number.isFinite(tick.quote) ? tick.quote.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "—"}</strong>
