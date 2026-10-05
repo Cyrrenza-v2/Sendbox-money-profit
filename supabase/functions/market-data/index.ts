@@ -118,8 +118,8 @@ function extractTradingTimeSymbols(node:any, marketName = "", submarketName = ""
   if (Array.isArray((node as any).symbols)) {
     for (const symbol of (node as any).symbols) {
       const normalized = normalizeMarket({
-        symbol: symbol?.symbol,
-        display_name: symbol?.name || symbol?.symbol,
+        symbol: symbol?.underlying_symbol ?? symbol?.symbol,
+        display_name: symbol?.name || symbol?.underlying_symbol_name || symbol?.underlying_symbol || symbol?.symbol,
         market_display_name: marketName,
         submarket_display_name: submarketName,
         market: marketName,
