@@ -92,6 +92,25 @@ function normalizeMarket(item: any) {
   };
 }
 
+function extractTradingTimeSymbols(node:any, parents:string[] = [], out:Map<string,any> = new Map()) {
+  if (!node || typeof node !== "object") return out;
+  if (Array.isArray(node)) {
+    for (const value of node) extractTradingTimeSymbols(value, parents, out);
+    return out;
+  }
+  for (const [key, value] of Object.entries(node)) {
+    if (!value || typeof value !== "object") continue;
+    const nextParents = [...parents, key];
+    const lowerKeys = Object.keys(value).map(k => k.toLowerCase());
+    const looksLikeSchedule = lowerKeys.some(k => ["open","close","times","trading_days","events"].includes(k));
+    if (looksLikeSchedule && /^[A-Za-z0-9_]{2,30}$/.test(key) && !["open","close","times","trading_days","events"].includes(key.toLowerCase())) {
+      out.set(key, { symbol: key, name: key, market: parents.at(-2) || parents.at(-1) || "", subgroup: parents.at(-1) || "" });
+    }
+    extractTradingTimeSymbols(value, nextParents, out);
+  }
+  return out;
+}
+
 async function getUser(req: Request) {
   const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
   if (!token) return null;
@@ -119,8 +138,21 @@ Deno.serve(async req => {
         : [];
       if (!markets.length) throw new Error("DERIV_PUBLIC_MARKET_CATALOG_EMPTY");
 
+      const bySymbol = new Map<string, any>(markets.map((item:any) => [item.symbol, item]));
+      try {
+        const scheduleResponse = await publicWsCall({ trading_times: "today", req_id: 62003 }, "trading_times");
+        const scheduleSymbols = extractTradingTimeSymbols(scheduleResponse?.trading_times);
+        for (const item of scheduleSymbols.values()) {
+          if (bySymbol.has(item.symbol)) continue;
+          bySymbol.set(item.symbol, normalizeMarket(item));
+        }
+      } catch {
+        // active_symbols remains the authoritative fallback if trading_times is unavailable.
+      }
+
+      const mergedMarkets = Array.from(bySymbol.values()).filter(Boolean);
       const updatedAt = new Date().toISOString();
-      const rows = markets.map((item: any) => ({
+      const rows = mergedMarkets.map((item: any) => ({
         source: "deriv",
         symbol: item.symbol,
         display_name: item.name,
@@ -132,7 +164,7 @@ Deno.serve(async req => {
       }));
       const { error } = await db.from("market_symbols").upsert(rows, { onConflict: "symbol" });
       if (error) throw error;
-      return json({ ok: true, data: { markets, count: markets.length, source: "server_deriv_public_websocket", observed_at: updatedAt } });
+      return json({ ok: true, data: { markets: mergedMarkets, count: mergedMarkets.length, activeSymbolCount: markets.length, tradingTimesCount: Math.max(0, mergedMarkets.length - markets.length), source: "server_deriv_public_websocket+trading_times", observed_at: updatedAt } });
     }
 
     if (op === "tick") {
