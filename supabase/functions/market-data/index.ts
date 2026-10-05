@@ -59,13 +59,35 @@ async function publicWsCall(payload: Record<string, unknown>, expected: string) 
   throw lastError instanceof Error ? lastError : new Error("DERIV_PUBLIC_MARKET_DATA_UNAVAILABLE");
 }
 
+
+const CATEGORY_ALIASES: Record<string,string> = {
+  basket_indices:"Basket Indices", basket:"Basket Indices", conversions:"Conversions", conversion:"Conversions", currency_conversion:"Conversions",
+  crash_boom_flip_indices:"Crash Boom Flip Indices", crash_boom_flip:"Crash Boom Flip Indices", crash_boom_indices:"Crash Boom Indices", crash_boom:"Crash Boom Indices",
+  crypto:"Crypto", cryptocurrency:"Crypto", cryptocurrencies:"Crypto", dex_indices:"DEX Indices", dex:"DEX Indices", drift_switching_indices:"Drift Switching Indices", drift_switching:"Drift Switching Indices",
+  etfs:"ETFs", etf:"ETFs", energies:"Energies", energy:"Energies", equities:"Equities", equity:"Equities", exponential_growth_indices:"Exponential Growth Indices", exponential_growth:"Exponential Growth Indices",
+  forex_exotic:"Forex Exotic", exotic_pairs:"Forex Exotic", exotic:"Forex Exotic", forex_major:"Forex Major", major_pairs:"Forex Major", major:"Forex Major", forex_micro:"Forex Micro", micro_pairs:"Forex Micro", micro:"Forex Micro", forex_minor:"Forex Minor", minor_pairs:"Forex Minor", minor:"Forex Minor",
+  hybrid_indices:"Hybrid Indices", hybrid:"Hybrid Indices", indices:"Indices", index:"Indices", jump_indices:"Jump Indices", jump:"Jump Indices", laddered_volatility_indices:"Laddered Volatility Indices", laddered_volatility:"Laddered Volatility Indices", metals:"Metals", metal:"Metals",
+  multi_step_indices:"Multi Step Indices", multi_step:"Multi Step Indices", range_break:"Range Break", range_break_indices:"Range Break", skewed_step:"Skewed Step", skewed_step_indices:"Skewed Step", soft_commodities:"Soft Commodities", soft_commodity:"Soft Commodities",
+  spot_volatility_indices:"Spot Volatility Indices", spot_volatility:"Spot Volatility Indices", step_indices:"Step Indices", step:"Step Indices", stock_indices:"Stock Indices", stock_index:"Stock Indices", trek_indices:"Trek Indices", trek:"Trek Indices",
+  volatility_crash_boom_indices:"Volatility Crash/Boom Indices", volatility_crash_boom:"Volatility Crash/Boom Indices", volatility_indices:"Volatility Indices", volatility:"Volatility Indices", volatility_switch_indices:"Volatility Switch Indices", volatility_switch:"Volatility Switch Indices"
+};
+function classifyDerivMarket(item:any){
+  const symbol=String(item?.symbol||"").trim(), market=String(item?.market||"").trim().toLowerCase(), subgroup=String(item?.subgroup||"").trim().toLowerCase(), name=String(item?.name||"").trim().toLowerCase();
+  for(const key of [subgroup,market]){ const normalized=key.replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,""); if(CATEGORY_ALIASES[normalized]) return CATEGORY_ALIASES[normalized]; for(const alias of Object.keys(CATEGORY_ALIASES)) if(normalized.includes(alias)) return CATEGORY_ALIASES[alias]; }
+  const text=`${name} ${symbol}`;
+  if(/exponential growth/.test(text)) return "Exponential Growth Indices";
+  if(/crash.*boom.*flip|flip.*crash.*boom/.test(text)) return "Crash Boom Flip Indices";
+  if(/crash.*boom/.test(text)) return "Crash Boom Indices";
+  if(/range break/.test(text)) return "Range Break"; if(/skewed step/.test(text)) return "Skewed Step"; if(/multi step/.test(text)) return "Multi Step Indices"; if(/drift switching/.test(text)) return "Drift Switching Indices"; if(/laddered volatility/.test(text)) return "Laddered Volatility Indices"; if(/volatility switch/.test(text)) return "Volatility Switch Indices"; if(/volatility.*crash|crash.*volatility|volatility.*boom|boom.*volatility/.test(text)) return "Volatility Crash/Boom Indices"; if(/spot volatility/.test(text)) return "Spot Volatility Indices"; if(/volatility/.test(text)||/^r_/.test(symbol.toLowerCase())||/^1hz/.test(symbol.toLowerCase())) return "Volatility Indices"; if(/jump/.test(text)) return "Jump Indices"; if(/step/.test(text)) return "Step Indices"; if(/trek/.test(text)) return "Trek Indices"; if(/dex/.test(text)) return "DEX Indices"; if(/basket/.test(text)) return "Basket Indices"; if(/crypto|bitcoin|ethereum|litecoin|dogecoin/.test(text)) return "Crypto"; if(/etf/.test(text)) return "ETFs"; if(/energy|oil|brent|crude|gas/.test(text)) return "Energies"; if(/gold|silver|platinum|palladium/.test(text)) return "Metals"; if(/coffee|cocoa|cotton|sugar|wheat|corn/.test(text)) return "Soft Commodities"; if(/equity|share/.test(text)) return "Equities"; if(/forex/.test(market)||/^frx/i.test(symbol)||/\//.test(name)) return "Forex Major"; return "Indices";
+}
+
 function normalizeMarket(item: any) {
   const symbol = String(item?.underlying_symbol ?? item?.symbol ?? "").trim();
   if (!symbol) return null;
   return {
     symbol,
     name: String(item?.underlying_symbol_name ?? item?.display_name ?? symbol),
-    market: String(item?.market_display_name ?? item?.market ?? item?.underlying_symbol_type ?? "Other"),
+    market: classifyDerivMarket({ symbol, name: String(item?.underlying_symbol_name ?? item?.display_name ?? symbol), market: item?.market_display_name ?? item?.market ?? item?.underlying_symbol_type, subgroup: item?.subgroup ?? item?.submarket }),
     subgroup: String(item?.subgroup ?? item?.submarket ?? "")
   };
 }
