@@ -100,9 +100,10 @@ async function callback(code: string, state: string) {
   const ids = primaryAccounts.map((a: any) => String(a.account_id || "")).filter(Boolean);
   const now = new Date().toISOString();
 
-  await admin.from("profiles").upsert({ user_id: uid, status: "active", updated_at: now });
+  const { error: profileError } = await admin.from("profiles").upsert({ user_id: uid, status: "active", updated_at: now });
+  if (profileError) throw profileError;
 
-  await admin.schema("private").from("deriv_oauth_credentials").upsert({
+  const { error: credentialError } = await admin.schema("private").from("deriv_oauth_credentials").upsert({
     user_id: uid,
     access_token: td.access_token,
     refresh_token: td.refresh_token || null,
@@ -111,6 +112,7 @@ async function callback(code: string, state: string) {
     scopes: String(td.scope || "").split(/[ ,]+/).filter(Boolean),
     updated_at: now
   }, { onConflict: "user_id" });
+  if (credentialError) throw credentialError;
 
   for (const a of accounts) {
     const derivAccountId = String(a.account_id || "").trim();
@@ -151,7 +153,7 @@ async function callback(code: string, state: string) {
   }
 
   const primaryAccount = primaryAccounts.find((a: any) => String(a.account_id || "").trim() === ids[0]);
-  await admin.from("deriv_connections").upsert({
+  const { error: connectionError } = await admin.from("deriv_connections").upsert({
     user_id: uid,
     status: "connected",
     deriv_loginid: ids[0] || null,
@@ -161,8 +163,10 @@ async function callback(code: string, state: string) {
     last_error: null,
     updated_at: now
   }, { onConflict: "user_id" });
+  if (connectionError) throw connectionError;
 
-  await admin.schema("private").from("deriv_oauth_pending_states").delete().eq("state", state);
+  const { error: pendingStateError } = await admin.schema("private").from("deriv_oauth_pending_states").delete().eq("state", state);
+  if (pendingStateError) throw pendingStateError;
 
   return new Response(null, { status: 303, headers: { ...cors, Location: `${appUrl}/app/deriv/account?deriv=connected` } });}
 
