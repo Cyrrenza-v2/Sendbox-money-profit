@@ -379,3 +379,14 @@ html,body,#root,.vel-app,.vel-main,.vel-content{background:Canvas!important}
 .vt-gate-note,.market-detail-note{color:var(--vel-muted,#91a39a);font-size:10px;line-height:1.6}
 @media(max-width:900px){.market-account-strip{grid-template-columns:1fr}.vt-lower-grid{grid-template-columns:1fr}.vt-tick-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:560px){.vt-heading{display:block}.vt-header-actions{margin-top:10px}.vt-order-actions{grid-template-columns:1fr}.vt-tick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.vt-chart-svg{min-height:220px}}
+
+
+/* Production blank-screen recovery */
+.app-error{min-height:100vh;display:grid;place-items:center;padding:24px;background:#0b0e14;color:#fff}
+.app-error-card{width:min(680px,100%);padding:28px;border:1px solid #30363d;border-radius:12px;background:#161b22;box-shadow:0 18px 60px rgba(0,0,0,.35)}
+.app-error-card>b{color:#d4af37;letter-spacing:2px}
+.app-error-card h1{margin:12px 0 8px;font-size:24px}
+.app-error-card p{margin:0 0 12px;color:#c9d1d9;line-height:1.6;word-break:break-word}
+.app-error-card small{color:#8b949e}
+.app-error-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
+.app-error-actions button,.app-error-card>button{border:1px solid #3d4a54;border-radius:7px;padding:10px 14px;background:#0d1117;color:#fff;cursor:pointer;font-weight:700}
