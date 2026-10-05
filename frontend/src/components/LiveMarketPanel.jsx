@@ -4,8 +4,6 @@ import { supabase } from "../supabaseClient";
 const DERIV_PUBLIC_ENDPOINTS = ["wss:" + "//api.derivws.com/trading/v1/options/ws/public", "wss:" + "//ws.binaryws.com/websockets/v3"];
 const DERIV_DISCOVERY_TIMEOUT_MS = 30000;
 const DERIV_RETRY_BASE_MS = 1500;
-const DERIV_DISCOVERY_TIMEOUT_MS = 30000;
-const DERIV_RETRY_BASE_MS = 1500;
 
 export default function LiveMarketPanel({ compact = false, selectedSymbol = null, onSymbolChange, onPriceChange, onOpenTerminal }) {
   const [markets, setMarkets] = useState([]);
