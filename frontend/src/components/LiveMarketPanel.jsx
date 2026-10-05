@@ -16,6 +16,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
   const [loading, setLoading] = useState(true);
   const [discoveryComplete, setDiscoveryComplete] = useState(false);
   const [error, setError] = useState("");
+  const [feedMode, setFeedMode] = useState("BROWSER");
   const [query, setQuery] = useState("");
   const [marketFilter, setMarketFilter] = useState("ALL");
   const [focusedSymbol, setFocusedSymbol] = useState(selectedSymbol || "");
@@ -38,30 +39,93 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
     let socket = null;
     let endpointIndex = 0;
     let retryTimer = null;
+    let serverPollTimer = null;
     let retryCount = 0;
     let symbolsLoaded = false;
     let failureHandled = false;
     let connectTimeout = null;
     let activeSubscription = null;
+    let serverFallbackActive = false;
 
     const nextReqId = () => ++requestSeqRef.current;
 
-    // Keep exactly one tick subscription per socket. The previous implementation
-    // subscribed to up to 80 symbols at once, which could cause duplicate
-    // subscription errors and unnecessary public-socket traffic.
+    const applyServerMarkets = markets => {
+      const unique = Array.from(new Map(
+        (Array.isArray(markets) ? markets : [])
+          .map(item => ({
+            symbol: item?.symbol,
+            name: item?.name || item?.symbol,
+            market: item?.market || "Other",
+            subgroup: item?.subgroup || ""
+          }))
+          .filter(item => item.symbol)
+          .map(item => [item.symbol, item])
+      ).values());
+      if (!unique.length) throw new Error("DERIV_PUBLIC_MARKET_CATALOG_EMPTY");
+      setMarkets(unique);
+      setFocusedSymbol(current => current || selectedSymbolRef.current || unique[0]?.symbol || "");
+      setLoading(false);
+      setDiscoveryComplete(true);
+      return unique;
+    };
+
+    const stopServerTickPolling = () => {
+      if (serverPollTimer) clearTimeout(serverPollTimer);
+      serverPollTimer = null;
+      serverFallbackActive = false;
+    };
+
+    const startServerTickPolling = () => {
+      if (disposed || serverFallbackActive) return;
+      serverFallbackActive = true;
+      setFeedMode("SERVER");
+      const poll = async () => {
+        if (disposed || !serverFallbackActive) return;
+        const marketSymbol = selectedSymbolRef.current || focusedSymbol;
+        if (marketSymbol) {
+          try {
+            const { data, error: invokeError } = await supabase.functions.invoke("trading-service", {
+              body: { operation: "public_market_tick", symbol: marketSymbol }
+            });
+            const tick = data?.ok ? data.data : null;
+            const quote = Number(tick?.quote);
+            const epoch = Number(tick?.epoch);
+            if (!invokeError && Number.isFinite(quote) && Number.isFinite(epoch)) {
+              const nextTick = { quote, epoch, pipSize: tick?.pipSize ?? null };
+              setTicks(prev => ({ ...prev, [marketSymbol]: nextTick }));
+              setConnected(true);
+              setError("");
+              onPriceChangeRef.current?.(nextTick);
+            }
+          } catch {}
+        }
+        if (!disposed && serverFallbackActive) serverPollTimer = setTimeout(poll, 2500);
+      };
+      poll();
+    };
+
+    const loadServerCatalog = async () => {
+      try {
+        const { data, error: invokeError } = await supabase.functions.invoke("trading-service", {
+          body: { operation: "public_market_catalog" }
+        });
+        if (invokeError) throw invokeError;
+        const payload = data?.ok ? data.data : null;
+        const unique = applyServerMarkets(payload?.markets);
+        setFeedMode("SERVER");
+        setError("");
+        startServerTickPolling();
+        return unique;
+      } catch {
+        return null;
+      }
+    };
+
     const subscribeSymbol = symbol => {
       if (!symbol || disposed || socket?.readyState !== WebSocket.OPEN) return;
       if (activeSubscription === symbol) return;
-      if (activeSubscription === symbol) return;
       activeSubscription = symbol;
-
-      // Clear the socket's existing tick subscription before starting the new
-      // selected-market stream. Deriv forget expects a subscription id, not a
-      // symbol; forget_all avoids the recurring "already subscribed" state.
-      try {
-        socket.send(JSON.stringify({ forget_all: "ticks", req_id: nextReqId() }));
-      } catch {}
-
+      try { socket.send(JSON.stringify({ forget_all: "ticks", req_id: nextReqId() })); } catch {}
       try {
         socket.send(JSON.stringify({ ticks: symbol, subscribe: 1, req_id: nextReqId() }));
       } catch {
@@ -89,8 +153,11 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         retryTimer = setTimeout(connect, 500);
       } else {
         setLoading(false);
-        setDiscoveryComplete(false);
-        setError(reason || "Could not reach Deriv market data from this browser. Check network WebSocket access.");
+        setDiscoveryComplete(prev => prev || serverFallbackActive);
+        if (!serverFallbackActive) {
+          setError(reason || "Could not reach Deriv market data. Check network WebSocket access.");
+          startServerTickPolling();
+        }
         endpointIndex = 0;
         retryTimer = setTimeout(connect, Math.min(30000, DERIV_RETRY_BASE_MS * (2 ** Math.min(retryCount++, 4))));
       }
@@ -113,13 +180,14 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
 
       connectTimeout = setTimeout(() => {
         if (!symbolsLoaded && !disposed) {
-          scheduleNextEndpoint("Deriv connected too slowly or did not return its active-symbol list. Allow WebSocket traffic on your network.");
+          scheduleNextEndpoint("Deriv connected too slowly or did not return its active-symbol list. Using the secure server market relay.");
         }
       }, DERIV_DISCOVERY_TIMEOUT_MS);
 
       socket.onopen = () => {
         if (disposed) return;
         setConnected(true);
+        setFeedMode("BROWSER");
         setError("");
         socket.send(JSON.stringify({ active_symbols: "full", req_id: nextReqId() }));
       };
@@ -142,8 +210,6 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
               normalizedError.includes("already_subscribed");
 
             if (isAlreadySubscribed) {
-              // Another subscription may already exist on this socket. Do not
-              // turn that recoverable state into a global market-feed failure.
               setConnected(true);
               setError("");
               return;
@@ -152,9 +218,9 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             if (message.msg_type === "active_symbols" || message.req_id === 1) {
               setLoading(false);
               setDiscoveryComplete(false);
-              setError("Deriv market discovery failed: " + messageText);
+              if (!serverFallbackActive) setError("Deriv market discovery failed: " + messageText);
               clearConnectionTimeout();
-            } else if (message.msg_type === "tick" && !isClosedMarket) {
+            } else if (message.msg_type === "tick" && !isClosedMarket && !serverFallbackActive) {
               setError("A live price subscription failed: " + messageText);
             }
             return;
@@ -164,7 +230,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             const discovered = message.active_symbols.map(item => ({
               symbol: item.underlying_symbol ?? item.symbol,
               name: item.underlying_symbol_name ?? item.display_name ?? item.symbol,
-              market: item.market_display_name ?? item.market ?? item.symbol_type ?? "Other",
+              market: item.market_display_name ?? item.market ?? item.symbol_type ?? item.underlying_symbol_type ?? "Other",
               subgroup: item.subgroup ?? item.submarket ?? ""
             })).filter(item => item.symbol && item.name);
             const unique = Array.from(new Map(discovered.map(item => [item.symbol, item])).values());
@@ -175,7 +241,9 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             setLoading(false);
             setDiscoveryComplete(true);
             setConnected(true);
-            setError(unique.length ? "" : "Deriv connected, but returned an empty active-symbol list.");
+            setFeedMode("BROWSER");
+            setError("");
+            stopServerTickPolling();
 
             if (unique.length) {
               const syncedAt = new Date().toISOString();
@@ -189,18 +257,13 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
                 raw: item,
                 updated_at: syncedAt
               }));
-              supabase
-                .from("market_symbols")
-                .upsert(rows, { onConflict: "symbol" })
+              supabase.from("market_symbols").upsert(rows, { onConflict: "symbol" })
                 .then(({ error: syncError }) => {
                   if (syncError) console.warn("Supabase market catalog sync failed:", syncError.message);
                 })
                 .catch(syncError => console.warn("Supabase market catalog sync failed:", syncError?.message || syncError));
             }
 
-            // Only stream the market the user selected. This prevents the
-            // previous 80-symbol burst from creating duplicate-subscription
-            // failures and keeps the selected price feed responsive.
             subscribeSymbol(selectedSymbolRef.current || focusedSymbol || unique[0]?.symbol);
             return;
           }
@@ -216,24 +279,18 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             if (symbol === selectedSymbolRef.current || (!selectedSymbolRef.current && symbol === focusedSymbol)) {
               onPriceChangeRef.current?.(nextTick);
             }
+            stopServerTickPolling();
           }
         } catch {
-          setError("Deriv returned a response that could not be read.");
+          if (!serverFallbackActive) setError("Deriv returned a response that could not be read.");
         }
       };
 
       socket.onerror = () => {
-        if (disposed) return;
-        // Give transient browser/network failures a short grace period before
-        // failing over. Some mobile networks establish the socket slightly
-        // after the error event is emitted.
-        if (!failureHandled && !disposed) {
-          retryTimer = setTimeout(() => {
-            if (!symbolsLoaded && !disposed) {
-              scheduleNextEndpoint("Unable to establish a WebSocket connection to Deriv. Check whether your network blocks WebSockets.");
-            }
-          }, 1500);
-        }
+        if (disposed || failureHandled) return;
+        retryTimer = setTimeout(() => {
+          if (!symbolsLoaded && !disposed) scheduleNextEndpoint("Unable to establish a WebSocket connection to Deriv. Using the secure server market relay.");
+        }, 1200);
       };
 
       socket.onclose = () => {
@@ -242,8 +299,9 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         clearConnectionTimeout();
         activeSubscription = null;
         if (!symbolsLoaded) {
-          scheduleNextEndpoint("Deriv closed the connection before sending active markets. Check network WebSocket access.");
+          scheduleNextEndpoint("Deriv closed the connection before sending active markets. Using the secure server market relay.");
         } else {
+          startServerTickPolling();
           retryTimer = setTimeout(() => {
             endpointIndex = 0;
             connect();
@@ -252,11 +310,15 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       };
     };
 
-    connect();
+    loadServerCatalog().finally(() => {
+      if (!disposed) connect();
+    });
+
     return () => {
       disposed = true;
       clearConnectionTimeout();
       if (retryTimer) clearTimeout(retryTimer);
+      stopServerTickPolling();
       try { socket?.close(); } catch {}
       if (socketRef.current === socket) socketRef.current = null;
       subscribeSymbolRef.current = null;
@@ -283,7 +345,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
   return <section className="panel market-panel">
     <div className="panel-title market-title">
       <span>LIVE DERIV MARKET — ALL ACTIVE SYMBOLS</span>
-      <span className={connected ? "market-status connected" : "market-status"}>● {connected ? "STREAMING" : "CONNECTING"}</span>
+      <span className={connected ? "market-status connected" : "market-status"}>● {connected ? (feedMode === "SERVER" ? "SERVER STREAM" : "STREAMING") : "CONNECTING"}</span>
     </div>
     <div className="market-toolbar">
       <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search every Deriv market or symbol..." aria-label="Search Deriv markets" />
@@ -307,6 +369,6 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
     {!compact && focusedMarket && <div className="market-detail"><div className="market-detail-heading"><div><span className="market-detail-kicker">SELECTED MARKET</span><h3>{focusedMarket.name}</h3><p>{focusedMarket.symbol} · {focusedMarket.market}</p></div><div className="market-detail-quote"><small>Latest public quote</small><strong>{ticks[focusedMarket.symbol] && Number.isFinite(ticks[focusedMarket.symbol].quote) ? ticks[focusedMarket.symbol].quote.toLocaleString("en-US", { maximumFractionDigits: 8 }) : "Waiting for quote…"} </strong><small>{ticks[focusedMarket.symbol] ? new Date(ticks[focusedMarket.symbol].epoch * 1000).toLocaleTimeString() : "Feed initializing"}</small></div></div><div className="market-detail-actions"><button className="market-open-terminal" onClick={() => onOpenTerminal?.(focusedMarket.symbol)}>Open Web Terminal <span>→</span></button><button className="market-mt5-placeholder" disabled title="MT5 integration is not available yet">MT5 Terminal · Coming later</button></div><p className="market-detail-note">Choose a market here, review its current public price, then open the terminal to view candles and place sandbox orders. Selecting a market does not place an order.</p></div>}
     {!loading && discoveryComplete && visibleMarkets.length === 0 && <div className="market-empty">No active Deriv symbols match this filter.</div>}
     {!loading && !discoveryComplete && markets.length === 0 && <div className="market-empty">Market list is unavailable until the Deriv connection succeeds. The diagnostic above explains the latest failure.</div>}
-    <div className="market-footnote">Dynamically discovered from Deriv <code>active_symbols=full</code>. The market list is synchronized to Supabase, while only the selected market receives a live tick subscription to keep the feed stable. Public live market data only; trading credentials remain server-side.</div>
+    <div className="market-footnote">Dynamically discovered from Deriv <code>active_symbols=full</code>. The market list is synchronized to Supabase. If a browser WebSocket is unavailable, the authenticated Supabase Edge Function securely relays public Deriv market data instead. Public live market data only; trading credentials remain server-side.</div>
   </section>;
 }
