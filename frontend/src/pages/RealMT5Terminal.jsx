@@ -30,33 +30,80 @@ function Chart({candles,price,symbol}){
 export default function RealMT5Terminal(){
  const [params]=useSearchParams();
  const initialSymbol=params.get("symbol")||"1HZ100V";
- const [side,setSide]=useState(false),[symbol,setSymbol]=useState(initialSymbol),[price,setPrice]=useState(null),[feed,setFeed]=useState("WAITING");
- const [candles,setCandles]=useState([]),[ticks,setTicks]=useState([]),[tf,setTf]=useState(300),[account,setAccount]=useState(null),[portfolio,setPortfolio]=useState([]);
- const historySocketRef=useRef(null);
- const [stake,setStake]=useState("10"),[growth,setGrowth]=useState("1"),[busy,setBusy]=useState(false),[msg,setMsg]=useState(""),[error,setError]=useState("");
- const [selectedContract,setSelectedContract]=useState(null),[wallets,setWallets]=useState([]),[transferAmount,setTransferAmount]=useState(""),[transferDir,setTransferDir]=useState("to_wallet"),[transferBusy,setTransferBusy]=useState(false);
- const refresh=async()=>{try{const s=await invoke(fn,{operation:"real_snapshot"});setAccount(s||null);setPortfolio(s?.portfolio?.contracts||[]);}catch(e){setError(e.message||"REAL_ACCOUNT_SYNC_FAILED")}};
- useEffect(()=>{refresh();const t=setInterval(refresh,5000);return()=>clearInterval(t)},[]);
- useEffect(()=>{let dead=false,retryTimer=null;setCandles([]);setFeed("LOADING_HISTORY");const loadHistory=()=>{if(dead)return;let ws;try{ws=new WebSocket("wss://ws.binaryws.com/websockets/v3?app_id=1089");historySocketRef.current=ws}catch{setFeed("HISTORY_UNAVAILABLE");return}const timeout=setTimeout(()=>{try{ws.close()}catch{}},10000);ws.onopen=()=>{ws.send(JSON.stringify({ticks_history:symbol,adjust_start_time:1,count:180,end:"latest",style:"candles",granularity:tf,req_id:7001}))};ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.error){setError(m.error.message||m.error.code||"LIVE_HISTORY_FAILED");return}if(m.msg_type==="history"||m.msg_type==="candles"){const raw=m.candles||m.history?.candles||[];if(raw.length){setCandles(raw.map(c=>({time:Number(c.epoch),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)})).filter(c=>[c.time,c.open,c.high,c.low,c.close].every(Number.isFinite)).sort((a,b)=>a.time-b.time).slice(-180));setFeed(current=>current==="LOADING_HISTORY"?"WAITING_FOR_TICK":current);}}}catch{setError("LIVE_MARKET_DATA_PARSE_FAILED")}};ws.onerror=()=>setFeed(current=>current==="LOADING_HISTORY"?"HISTORY_RECONNECTING":current);ws.onclose=()=>{clearTimeout(timeout);if(!dead)retryTimer=setTimeout(loadHistory,5000)}};loadHistory();return()=>{dead=true;clearTimeout(retryTimer);try{historySocketRef.current?.close()}catch{}historySocketRef.current=null}},[symbol,tf]);
- const onTick=t=>{const q=Number(t?.quote),epoch=Number(t?.epoch);if(!Number.isFinite(q)||!Number.isFinite(epoch))return;setPrice(q);setFeed("LIVE");setTicks(a=>[{quote:q,epoch},...a].slice(0,40));const bucket=Math.floor(epoch/tf)*tf;setCandles(a=>{const last=a[a.length-1];if(!last||last.time!==bucket)return [...a,{time:bucket,open:q,high:q,low:q,close:q}].slice(-180);return [...a.slice(0,-1),{...last,high:Math.max(last.high,q),low:Math.min(last.low,q),close:q}]})};
- const buy=async()=>{if(busy)return;setError("");setMsg("");if(!price)return setError("LIVE_PRICE_NOT_AVAILABLE");if(!account)return setError("REAL_ACCOUNT_NOT_SYNCHRONIZED");setBusy(true);try{const amount=Number(stake),gr=Number(growth);if(!(amount>0)||!(gr>0))throw new Error("INVALID_ORDER_PARAMETERS");const p=await invoke(fn,{operation:"accu_proposal",contract_template:{amount,basis:"stake",contract_type:"ACCU",currency:account?.currency||"USD",growth_rate:gr,underlying_symbol:symbol,duration:5,duration_unit:"m"}});const proposal=p?.proposal||p;const id=String(proposal?.id||"");const max=Number(proposal?.ask_price||proposal?.display_value||proposal?.price);if(!id||!(max>0))throw new Error("INVALID_PROPOSAL");const ok=window.confirm(`CONFIRM REAL ACCU BUY
-${symbol} · ${amount} ${account?.currency||"USD"} · growth ${gr}%
-This can place a real-money order if the server safety gate is released.`);if(!ok)return;const r=await invoke(fn,{operation:"buy",proposal_id:id,price:max,stake:amount,symbol,client_order_id:crypto.randomUUID()});setMsg(`REAL BUY CONFIRMED · contract ${r?.buy?.contract_id||r?.order?.deriv_contract_id||"created"}`);await refresh()}catch(e){setError(e.message||"REAL_BUY_FAILED")}finally{setBusy(false)}};
- const sell=async()=>{if(!selectedContract||busy)return;const id=String(selectedContract.contract_id||selectedContract.id||"");if(!id)return setError("CONTRACT_ID_REQUIRED");if(!window.confirm(`SELL REAL CONTRACT ${id} at market price?
-Deriv will execute this as a real-money sell if the safety gate is released.`))return;setBusy(true);try{const r=await invoke(fn,{operation:"sell",contract_id:id,price:0});setMsg(`REAL SELL CONFIRMED · ${r?.sell?.contract_id||id}`);setSelectedContract(null);await refresh()}catch(e){setError(e.message||"REAL_SELL_FAILED")}finally{setBusy(false)}};
- const loadWallets=async()=>{try{const w=await invoke(walletFn,{operation:"wallets"});setWallets(w?.wallets||[])}catch(e){setError(e.message||"WALLET_LOAD_FAILED")}};
- const transfer=async()=>{if(transferBusy)return;const amount=Number(transferAmount);if(!(amount>0))return setError("INVALID_TRANSFER_AMOUNT");if(!window.confirm(`${transferDir==="from_wallet"?"FUND REAL TRADING ACCOUNT":"MOVE REAL FUNDS TO DERIV WALLET"}: ${amount} ${account?.currency||"USD"}?
-This moves actual Deriv funds.`))return;setTransferBusy(true);try{const r=await invoke(walletFn,{operation:"platform_transfer",amount,currency:account?.currency||"USD",direction:transferDir,request_id:crypto.randomUUID()});setMsg(`REAL TRANSFER ACCEPTED · ${r?.request_id||""}`);setTransferAmount("");await loadWallets();await refresh()}catch(e){setError(e.message||"REAL_TRANSFER_FAILED")}finally{setTransferBusy(false)}};
- useEffect(()=>{loadWallets()},[]);
- const balance=Number(account?.balance?.balance ?? account?.balance ?? 0),eq=Number(account?.balance?.equity ?? account?.equity ?? balance);
- return <div className="app-layout"><Sidebar isOpen={side} onClose={()=>setSide(false)}/><div className="app-main"><header className="topbar"><button className="menu-button" onClick={()=>setSide(true)}>☰</button><span className="topbar-brand">VELTRION REAL TRADING WORKSTATION</span><span className="admin-badge real-badge">● READ ONLY</span></header><main className="content vt-page">
- <header className="vt-heading"><div><span className="eyebrow real-eyebrow">PHASE 2 / DERIV REAL</span><h1>Real Account — Read Only</h1><p>Authenticated Deriv account, live market data, positions, orders/history and reconciliation. No real-money actions are available here.</p></div><div className="vt-header-actions"><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}><i/> {feed==="LIVE"?"LIVE MARKET DATA":feed}</span></div></header>
- <div className="market-account-strip"><div className="market-account-card"><span>REAL BALANCE</span><strong>{account?.currency||"USD"} {fmt(balance,2)}</strong><small>{account?.loginid||account?.login||"Real account"}</small></div><div className="market-account-card"><span>EQUITY</span><strong>{account?.currency||"USD"} {fmt(eq,2)}</strong><small>Server-reconciled</small></div><div className="market-account-card market-account-state"><span>EXECUTION STATE</span><strong>{portfolio.length} OPEN</strong><small>Server safety gate applies to every order</small></div></div>
- <LiveMarketPanel selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={onTick}/>
- <section className="vt-panel vt-chart-panel"><div className="vt-panel-head"><div><h2>{symbol} Live Chart</h2><p>Deriv OHLC history + current tick stream</p></div><div className="vt-timeframes">{TIMEFRAMES.map(x=><button key={x.seconds} className={tf===x.seconds?"active":""} onClick={()=>setTf(x.seconds)}>{x.label}</button>)}</div></div><Chart candles={candles} price={price} symbol={symbol}/></section>
- <section className="vt-panel vt-tick-tape"><div className="vt-section-title"><div><h2>Live Tick Tape</h2><p>Real-time quotes for the selected market</p></div><span className="vt-ai-tag">{ticks.length} TICKS</span></div><div className="vt-tick-grid">{ticks.slice(0,20).map((t,i)=><div className="vt-tick-row" key={`${t.epoch}-${i}`}><span>{new Date(t.epoch*1000).toLocaleTimeString()}</span><strong>{fmt(t.quote,8)}</strong><small>{i===0?"LATEST":"TICK"}</small></div>)}</div>{!ticks.length&&<div className="vt-empty">Waiting for live ticks…</div>}</section>
- <div className="vt-lower-grid"><section className="vt-panel"><div className="vt-section-title"><div><h2>Real Order Ticket</h2><p>Deriv ACCU contract execution</p></div><span className="vt-ai-tag">REAL</span></div><label className="vt-label">Selected market<input value={symbol} readOnly/></label><div className="vt-order-price"><div><span>Live price</span><strong>{price?fmt(price,8):"Waiting…"}</strong></div><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}>{feed}</span></div><div className="vt-risk-fields"><label className="vt-label">Stake<input type="number" min="0.01" step="0.01" value={stake} onChange={e=>setStake(e.target.value)}/></label><label className="vt-label">Growth %<input type="number" min="0.01" step="0.01" value={growth} onChange={e=>setGrowth(e.target.value)}/></label></div><div className="vt-order-actions"><button className="vt-buy" disabled={busy||!price} onClick={buy}>{busy?"PROCESSING…":"BUY REAL ACCU"}</button><button className="vt-sell" disabled={busy||!selectedContract} onClick={sell}>{busy?"PROCESSING…":"SELL SELECTED"}</button></div><small className="vt-gate-note">No browser Deriv token is exposed. The server performs the proposal, safety-gate check and authenticated order.</small></section>
- <section className="vt-panel"><div className="vt-section-title"><div><h2>Wallet ↔ Trading Account</h2><p>Actual Deriv wallet transfer rail</p></div><span className="vt-ai-tag">PAYMENT SCOPE</span></div><button className="vt-ai-button" onClick={loadWallets}>REFRESH DERIV WALLETS</button><div className="vt-data-list">{wallets.map(w=><div className="audit-row" key={w.wallet_id||w.type}><span>{w.type||"wallet"} · {w.currency||account?.currency||"USD"}</span><b>{w.balance??w.balances?.[account?.currency||"USD"]?.balance??"—"}</b></div>)}</div><label className="vt-label">Amount<input type="number" min="0.01" step="0.01" value={transferAmount} onChange={e=>setTransferAmount(e.target.value)} /></label><label className="vt-label">Direction<select value={transferDir} onChange={e=>setTransferDir(e.target.value)}><option value="to_wallet">Trading account → Deriv wallet</option><option value="from_wallet">Deriv wallet → trading account</option></select></label><button className="vt-ai-button" disabled={transferBusy||!transferAmount} onClick={transfer}>{transferBusy?"TRANSFERRING…":"CONFIRM REAL TRANSFER"}</button><p className="market-detail-note">Demo/sandbox funds are virtual and cannot be transferred into or out of a real Deriv wallet. This rail moves only real Deriv funds.</p></section></div>
- <section className="vt-panel"><div className="vt-section-title"><div><h2>Open Real Positions</h2><p>Live portfolio from the authenticated real account</p></div></div>{portfolio.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Contract</th><th>Market</th><th>Buy</th><th>Current</th><th>P/L</th><th>Action</th></tr></thead><tbody>{portfolio.map(p=><tr key={p.contract_id||p.id} onClick={()=>setSelectedContract(p)}><td>{p.contract_id||p.id}</td><td>{p.underlying_symbol||p.symbol||"—"}</td><td>{p.buy_price??"—"}</td><td>{p.bid_price??p.sell_price??"—"}</td><td className={Number(p.profit)>=0?"vt-positive":"vt-negative"}>{p.profit??"—"}</td><td><button className="vt-close" onClick={()=>setSelectedContract(p)}>Select</button></td></tr>)}</tbody></table></div>:<div className="vt-empty">No open real positions returned by Deriv.</div>}</section>
+ const [side,setSide]=useState(false),[symbol,setSymbol]=useState(initialSymbol),[price,setPrice]=useState(null),[feed,setFeed]=useState("CONNECTING");
+ const [candles,setCandles]=useState([]),[ticks,setTicks]=useState([]),[tf,setTf]=useState(300),[account,setAccount]=useState(null),[portfolio,setPortfolio]=useState([]),[history,setHistory]=useState([]),[statements,setStatements]=useState([]);
+ const historySocketRef=useRef(null),refreshBusy=useRef(false),retryRef=useRef(null);
+ const [error,setError]=useState(""),[lastSync,setLastSync]=useState(null);
+
+ const refresh=async()=>{
+   if(refreshBusy.current)return;
+   refreshBusy.current=true;
+   try{
+     const s=await invoke(fn,{operation:"real_snapshot"});
+     if(s){
+       setAccount(s);
+       setPortfolio(Array.isArray(s?.portfolio?.contracts)?s.portfolio.contracts:[]);
+       setHistory(Array.isArray(s?.profit_table?.transactions)?s.profit_table.transactions:[]);
+       setStatements(Array.isArray(s?.statement?.transactions)?s.statement.transactions:[]);
+       setLastSync(new Date());
+       setError("");
+     }
+   }catch(e){
+     setError(e.message||"REAL_ACCOUNT_SYNC_FAILED");
+   }finally{refreshBusy.current=false}
+ };
+
+ useEffect(()=>{
+   let dead=false;
+   const run=async()=>{if(dead)return;await refresh();if(!dead)retryRef.current=setTimeout(run,15000)};
+   run();
+   return()=>{dead=true;clearTimeout(retryRef.current)};
+ },[]);
+
+ useEffect(()=>{
+   let dead=false,retryTimer=null,ws=null;
+   setCandles([]);setFeed("LOADING_HISTORY");
+   const loadHistory=()=>{
+     if(dead)return;
+     try{ws=new WebSocket("wss://ws.binaryws.com/websockets/v3?app_id=1089");historySocketRef.current=ws}
+     catch{setFeed("HISTORY_RECONNECTING");retryTimer=setTimeout(loadHistory,5000);return}
+     const timeout=setTimeout(()=>{try{ws.close()}catch{}},12000);
+     ws.onopen=()=>{setFeed(current=>current==="LIVE"?"LIVE":"WAITING_FOR_TICK");ws.send(JSON.stringify({ticks_history:symbol,adjust_start_time:1,count:180,end:"latest",style:"candles",granularity:tf,req_id:7001}))};
+     ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.error){setFeed("HISTORY_RECONNECTING");return}if(m.msg_type==="history"||m.msg_type==="candles"){const raw=m.candles||m.history?.candles||[];if(raw.length){setCandles(raw.map(c=>({time:Number(c.epoch),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)})).filter(c=>[c.time,c.open,c.high,c.low,c.close].every(Number.isFinite)).sort((a,b)=>a.time-b.time).slice(-180));setFeed(current=>current==="LOADING_HISTORY"||current==="HISTORY_RECONNECTING"?"WAITING_FOR_TICK":current)}}}catch{}};
+     ws.onerror=()=>setFeed("HISTORY_RECONNECTING");
+     ws.onclose=()=>{clearTimeout(timeout);if(!dead){setFeed("HISTORY_RECONNECTING");retryTimer=setTimeout(loadHistory,5000)}};
+   };
+   loadHistory();
+   return()=>{dead=true;clearTimeout(retryTimer);try{ws?.close()}catch{}historySocketRef.current=null};
+ },[symbol,tf]);
+
+ const onTick=t=>{
+   const q=Number(t?.quote),epoch=Number(t?.epoch);
+   if(!Number.isFinite(q)||!Number.isFinite(epoch))return;
+   setPrice(q);setFeed("LIVE");setTicks(a=>[{quote:q,epoch},...a].slice(0,40));
+   const bucket=Math.floor(epoch/tf)*tf;
+   setCandles(a=>{const last=a[a.length-1];if(!last||last.time!==bucket)return [...a,{time:bucket,open:q,high:q,low:q,close:q}].slice(-180);return [...a.slice(0,-1),{...last,high:Math.max(last.high,q),low:Math.min(last.low,q),close:q}]});
+ };
+
+ const balance=Number(account?.balance?.balance ?? account?.balance ?? 0);
+ const eq=Number(account?.balance?.equity ?? account?.equity ?? balance);
+ const safeTime=lastSync?lastSync.toLocaleTimeString():"Not synchronized";
+
+ return <div className="app-layout">
+  <Sidebar isOpen={side} onClose={()=>setSide(false)}/>
+  <div className="app-main"><header className="topbar"><button className="menu-button" onClick={()=>setSide(true)}>☰</button><span className="topbar-brand">VELTRION REAL ACCOUNT</span><span className="admin-badge real-badge">● READ ONLY</span></header>
+  <main className="content vt-page">
+   <header className="vt-heading"><div><span className="eyebrow real-eyebrow">PHASE 2 / DERIV REAL</span><h1>Real Account — Read Only</h1><p>Authenticated Deriv account, live market data, positions, orders/history and reconciliation. Temporary connection loss never clears the last valid account state.</p></div><div className="vt-header-actions"><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}><i/> {feed==="LIVE"?"LIVE MARKET DATA":feed}</span></div></header>
+   {error&&<div className="market-detail-note">Connection warning: {error} · Retaining last valid data and retrying automatically.</div>}
+   <div className="market-account-strip"><div className="market-account-card"><span>REAL BALANCE</span><strong>{account?.currency||"USD"} {fmt(balance,2)}</strong><small>{account?.loginid||account?.login||"Real account"} · synced {safeTime}</small></div><div className="market-account-card"><span>EQUITY</span><strong>{account?.currency||"USD"} {fmt(eq,2)}</strong><small>Server-reconciled</small></div><div className="market-account-card market-account-state"><span>EXECUTION STATE</span><strong>LOCKED</strong><small>Phase 2 is read-only; no real orders or transfers</small></div></div>
+   <LiveMarketPanel selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={onTick}/>
+   <section className="vt-panel vt-chart-panel"><div className="vt-panel-head"><div><h2>{symbol} Live Chart</h2><p>Deriv OHLC history + current tick stream</p></div><div className="vt-timeframes">{TIMEFRAMES.map(x=><button key={x.seconds} className={tf===x.seconds?"active":""} onClick={()=>setTf(x.seconds)}>{x.label}</button>)}</div></div><Chart candles={candles} price={price} symbol={symbol}/></section>
+   <section className="vt-panel vt-tick-tape"><div className="vt-section-title"><div><h2>Live Tick Tape</h2><p>Real-time quotes for the selected market</p></div><span className="vt-ai-tag">{ticks.length} TICKS</span></div><div className="vt-tick-grid">{ticks.slice(0,20).map((t,i)=><div className="vt-tick-row" key={t.epoch+"-"+i}><span>{new Date(t.epoch*1000).toLocaleTimeString()}</span><strong>{fmt(t.quote,8)}</strong><small>{i===0?"LATEST":"TICK"}</small></div>)}</div>{!ticks.length&&<div className="vt-empty">Waiting for live ticks…</div>}</section>
+   <section className="vt-panel"><div className="vt-section-title"><div><h2>Open Real Positions</h2><p>Authenticated Deriv portfolio</p></div><span className="vt-ai-tag">READ ONLY</span></div>{portfolio.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Contract</th><th>Market</th><th>Buy</th><th>Current</th><th>P/L</th></tr></thead><tbody>{portfolio.map(p=><tr key={p.contract_id||p.id}><td>{p.contract_id||p.id}</td><td>{p.underlying_symbol||p.symbol||"—"}</td><td>{p.buy_price??"—"}</td><td>{p.bid_price??p.sell_price??"—"}</td><td className={Number(p.profit)>=0?"vt-positive":"vt-negative"}>{p.profit??"—"}</td></tr>)}</tbody></table></div>:<div className="vt-empty">No open real positions returned by Deriv.</div>}</section>
+   <div className="vt-lower-grid">
+    <section className="vt-panel"><div className="vt-section-title"><div><h2>Closed Orders / Profit History</h2><p>Server-reconciled Deriv profit table</p></div></div>{history.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Contract</th><th>Market</th><th>Buy</th><th>Sell</th><th>P/L</th></tr></thead><tbody>{history.slice(0,50).map((p,i)=><tr key={(p.contract_id||p.id||"h")+"-"+i}><td>{p.contract_id||p.id||"—"}</td><td>{p.underlying_symbol||p.symbol||"—"}</td><td>{p.buy_price??"—"}</td><td>{p.sell_price??"—"}</td><td className={Number(p.profit)>=0?"vt-positive":"vt-negative"}>{p.profit??"—"}</td></tr>)}</tbody></table></div>:<div className="vt-empty">No closed real trades returned by Deriv.</div>}</section>
+    <section className="vt-panel"><div className="vt-section-title"><div><h2>Account Statements</h2><p>Read-only reconciliation trail</p></div></div>{statements.length?<div className="vt-data-list">{statements.slice(0,30).map((s,i)=><div className="audit-row" key={(s.transaction_id||s.id||"s")+"-"+i}><span>{s.action||s.description||s.type||"Transaction"}</span><b>{s.amount??s.balance??"—"}</b></div>)}</div>:<div className="vt-empty">No statement transactions returned.</div>}</section>
+   </div>
+   <div className="market-detail-note">REAL ACCOUNT — READ ONLY · OAuth/server verification stays active · browser has no Deriv private credentials · real execution, transfers and withdrawals remain locked.</div>
   </main></div></div>;
 }
