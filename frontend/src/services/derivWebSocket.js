@@ -7,7 +7,7 @@ class DerivMarketService {
   connect(){
     if(this.ws && [WebSocket.OPEN,WebSocket.CONNECTING].includes(this.ws.readyState)) return;
     this.manualClose=false; this.setStatus("CONNECTING"); this.ws=new WebSocket(DERIV_WS_URL);
-    this.ws.onopen=()=>{ this.setStatus("LIVE"); this.startHeartbeat(); this.send({active_symbols:"brief",req_id:this.nextReqId++}); this.subscribeAll(); };
+    this.ws.onopen=()=>{ this.setStatus("LIVE"); this.startHeartbeat(); this.send({active_symbols:"full",req_id:this.nextReqId++}); this.subscribeAll(); };
     this.ws.onmessage=(event)=>{ let d; try{d=JSON.parse(event.data)}catch{return} if(d.error){this.setStatus("ERROR");return}
       if(d.msg_type==="active_symbols" && Array.isArray(d.active_symbols)){ this.symbols.clear(); d.active_symbols.forEach(i=>{const code=i.underlying_symbol||i.symbol; const name=i.underlying_symbol_name||i.display_name||code; if(code)this.symbols.set(code,{code,name,market:i.market})}); this.subscribeAll(); }
       if(d.msg_type==="tick" && d.tick){const cb=this.subscribers.get(d.tick.symbol); if(cb)cb(d.tick);}
