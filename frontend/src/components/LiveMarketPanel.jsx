@@ -320,15 +320,17 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             const unique = Array.from(new Map(discovered.map(item => [item.symbol, item])).values());
             symbolsLoaded = true;
             clearConnectionTimeout();
-            setMarkets(unique);
+            setMarkets(currentMarkets => {
+              const merged = Array.from(new Map([...currentMarkets, ...unique].map(item => [item.symbol, item])).values());
+              return merged;
+            });
             setFocusedSymbol(current => current || selectedSymbolRef.current || unique[0]?.symbol || "");
             setLoading(false);
             setDiscoveryComplete(true);
             setConnected(true);
             setFeedMode("BROWSER");
             setError("");
-            stopServerTickPolling();
-
+            // Keep the expanded server-discovered catalog; browser discovery only adds/refreshes symbols.
             if (unique.length) {
               const syncedAt = new Date().toISOString();
               const rows = unique.map(item => ({
