@@ -78,3 +78,4 @@ jobs:
           grep -q 'REAL_MARKET_RECONNECTING' frontend/src/pages/RealMT5Terminal.jsx
           grep -q 'ticks' frontend/src/pages/RealMT5Terminal.jsx
           echo "REAL MARKET SAFETY STATIC CHECK: PASS"
+          echo "CI trigger verification: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
