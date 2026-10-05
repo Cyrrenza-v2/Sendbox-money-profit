@@ -119,7 +119,7 @@ jobs:
           const symbols = [...new Set(catalog.active_symbols.map(x=>x.underlying_symbol||x.symbol).filter(Boolean))];
           console.log('DERIV CURRENT ACTIVE SYMBOL COUNT:', symbols.length);
           let ok=0, failed=[];
-          const concurrency=8;
+          const concurrency=3;
           for(let i=0;i<symbols.length;i+=concurrency){
             const batch=symbols.slice(i,i+concurrency);
             const results=await Promise.all(batch.map(async symbol=>{
@@ -138,6 +138,29 @@ jobs:
             for(const r of results) r.ok?ok++:failed.push(r.symbol);
           }
           console.log('DERIV TICK VERIFICATION:', ok+'/'+symbols.length);
+          if (failed.length) { console.error('TICK COVERAGE FAILED'); process.exit(1); }
+          console.log('Verifying historical ticks for every active symbol...');
+          let historyOk=0, historyFailed=[];
+          for(let i=0;i<symbols.length;i+=concurrency){
+            const batch=symbols.slice(i,i+concurrency);
+            const results=await Promise.all(batch.map(async symbol=>{
+              try{
+                const r=await wsCall(endpoints[0],{ticks_history:symbol,count:10,end:'latest',style:'ticks',req_id:93000+i},'history',12000);
+                const prices=Array.isArray(r?.history?.prices)?r.history.prices:[];
+                return {symbol,ok:prices.length>0};
+              }catch{
+                try{
+                  const r=await wsCall(endpoints[1],{ticks_history:symbol,count:10,end:'latest',style:'ticks',req_id:94000+i},'history',12000);
+                  const prices=Array.isArray(r?.history?.prices)?r.history.prices:[];
+                  return {symbol,ok:prices.length>0};
+                }catch{return {symbol,ok:false}}
+              }
+            }));
+            for(const r of results) r.ok?historyOk++:historyFailed.push(r.symbol);
+          }
+          console.log('DERIV HISTORY VERIFICATION:', historyOk+'/'+symbols.length);
+          if(historyFailed.length){console.error('SYMBOLS WITHOUT VALID HISTORY:',historyFailed);process.exit(1);}
+          console.log('MARKET DATA COVERAGE: PASS');
           if(failed.length) { console.error('SYMBOLS WITHOUT VALID TICK DATA:',failed); process.exit(1); }
           console.log('MARKET DATA COVERAGE: PASS');
           NODE
