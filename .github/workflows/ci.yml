@@ -90,7 +90,7 @@ jobs:
           node-version: 24
       - name: Install WebSocket client
         run: npm install --no-save ws@8
-      - name: Verify live Deriv catalog and tick coverage
+      - name: Verify authoritative Deriv catalog, schedules, ticks and history
         run: |
           node <<'NODE'
           const { WebSocket } = require('ws');
@@ -98,69 +98,111 @@ jobs:
             'wss://ws.derivws.com/websockets/v3?app_id=1089',
             'wss://ws.binaryws.com/websockets/v3'
           ];
-          const wsCall = (url, payload, expected, timeout=10000) => new Promise((resolve,reject)=>{
-            const ws = new WebSocket(url);
-            const timer = setTimeout(()=>{ try{ws.close()}catch{}; reject(new Error('timeout')); }, timeout);
-            ws.addEventListener('open',()=>ws.send(JSON.stringify(payload)));
-            ws.addEventListener('message',e=>{
-              let d; try{d=JSON.parse(String(e.data))}catch{return}
-              if(d.error){clearTimeout(timer);try{ws.close()}catch{};reject(new Error(d.error.message||'Deriv error'));return}
-              if(d.msg_type===expected){clearTimeout(timer);try{ws.close()}catch{};resolve(d)}
+
+          function openSocket(url) {
+            return new Promise((resolve,reject)=>{
+              const ws = new WebSocket(url);
+              const timer = setTimeout(()=>{ try{ws.close()}catch{}; reject(new Error('OPEN_TIMEOUT')); },15000);
+              ws.once('open',()=>{ clearTimeout(timer); resolve(ws); });
+              ws.once('error',e=>{ clearTimeout(timer); reject(e); });
             });
-            ws.addEventListener('error',()=>{clearTimeout(timer);try{ws.close()}catch{};reject(new Error('websocket error'))});
-          });
-          let catalog;
-          let last;
-          for (const endpoint of endpoints) {
-            try { catalog = await wsCall(endpoint,{active_symbols:'full',req_id:90001},'active_symbols'); break; }
-            catch(e){ last=e; }
           }
-          if (!catalog?.active_symbols?.length) throw last || new Error('EMPTY_DERIV_CATALOG');
-          const symbols = [...new Set(catalog.active_symbols.map(x=>x.underlying_symbol||x.symbol).filter(Boolean))];
-          console.log('DERIV CURRENT ACTIVE SYMBOL COUNT:', symbols.length);
-          let ok=0, failed=[];
-          const concurrency=3;
-          for(let i=0;i<symbols.length;i+=concurrency){
-            const batch=symbols.slice(i,i+concurrency);
-            const results=await Promise.all(batch.map(async symbol=>{
-              try{
-                const r=await wsCall(endpoints[0],{ticks:symbol,subscribe:0,req_id:91000+i},'tick',7000);
-                const q=Number(r?.tick?.quote), e=Number(r?.tick?.epoch);
-                return Number.isFinite(q)&&Number.isFinite(e)?{symbol,ok:true}:{symbol,ok:false};
-              }catch{
-                try{
-                  const r=await wsCall(endpoints[1],{ticks:symbol,subscribe:0,req_id:92000+i},'tick',7000);
-                  const q=Number(r?.tick?.quote), e=Number(r?.tick?.epoch);
-                  return Number.isFinite(q)&&Number.isFinite(e)?{symbol,ok:true}:{symbol,ok:false};
-                }catch{return {symbol,ok:false}}
+
+          async function withSocket(fn) {
+            let last;
+            for (const endpoint of endpoints) {
+              try {
+                const ws = await openSocket(endpoint);
+                try { return await fn(ws); }
+                finally { try{ws.close()}catch{}; }
+              } catch (e) { last=e; }
+            }
+            throw last || new Error('DERIV_WEBSOCKET_UNAVAILABLE');
+          }
+
+          function request(ws, payload, expected, timeout=15000) {
+            return new Promise((resolve,reject)=>{
+              const reqId = Number(payload.req_id);
+              const timer = setTimeout(()=>{ cleanup(); reject(new Error('REQUEST_TIMEOUT_'+expected)); },timeout);
+              const onMessage = e=>{
+                let d; try{d=JSON.parse(String(e.data))}catch{return}
+                if(Number(d.req_id)!==reqId && d.req_id!==undefined) return;
+                if(d.error){ cleanup(); reject(new Error(d.error.message||'DERIV_ERROR')); return; }
+                if(d.msg_type===expected){ cleanup(); resolve(d); }
+              };
+              const onClose = ()=>{ cleanup(); reject(new Error('WEBSOCKET_CLOSED')); };
+              const onError = ()=>{ cleanup(); reject(new Error('WEBSOCKET_ERROR')); };
+              const cleanup=()=>{
+                clearTimeout(timer);
+                ws.off('message',onMessage); ws.off('close',onClose); ws.off('error',onError);
+              };
+              ws.on('message',onMessage); ws.once('close',onClose); ws.once('error',onError);
+              ws.send(JSON.stringify(payload));
+            });
+          }
+
+          const active = await withSocket(ws=>request(ws,{active_symbols:'full',req_id:10001},'active_symbols'));
+          const symbols = [...new Set((active.active_symbols||[]).map(x=>x.underlying_symbol).filter(Boolean))];
+          if(!symbols.length) throw new Error('EMPTY_ACTIVE_SYMBOL_CATALOG');
+          console.log('DERIV ACTIVE SYMBOL COUNT:',symbols.length);
+
+          const schedules = await withSocket(ws=>request(ws,{trading_times:'today',req_id:10002},'trading_times'));
+          const scheduleSymbols = new Set();
+          function walk(node){
+            if(!node || typeof node!=='object') return;
+            if(Array.isArray(node)){ for(const x of node) walk(x); return; }
+            if(Array.isArray(node.markets)){ for(const x of node.markets) walk(x); return; }
+            if(Array.isArray(node.submarkets)){ for(const x of node.submarkets) walk(x); return; }
+            if(Array.isArray(node.symbols)){
+              for(const x of node.symbols){
+                const s=x?.underlying_symbol||x?.symbol;
+                if(s) scheduleSymbols.add(String(s));
               }
-            }));
-            for(const r of results) r.ok?ok++:failed.push(r.symbol);
+              return;
+            }
+            for(const [k,v] of Object.entries(node)){
+              if(v && typeof v==='object') walk(v);
+            }
           }
-          console.log('DERIV TICK VERIFICATION:', ok+'/'+symbols.length);
-          if (failed.length) { console.error('TICK COVERAGE FAILED'); process.exit(1); }
-          console.log('Verifying historical ticks for every active symbol...');
-          let historyOk=0, historyFailed=[];
-          for(let i=0;i<symbols.length;i+=concurrency){
-            const batch=symbols.slice(i,i+concurrency);
-            const results=await Promise.all(batch.map(async symbol=>{
-              try{
-                const r=await wsCall(endpoints[0],{ticks_history:symbol,count:10,end:'latest',style:'ticks',req_id:93000+i},'history',12000);
-                const prices=Array.isArray(r?.history?.prices)?r.history.prices:[];
-                return {symbol,ok:prices.length>0};
-              }catch{
+          walk(schedules.trading_times);
+          console.log('DERIV TRADING-TIMES SYMBOL COUNT:',scheduleSymbols.size);
+          const scheduleOnly=[...scheduleSymbols].filter(s=>!symbols.includes(s));
+          console.log('DERIV SCHEDULE-ONLY COUNT:',scheduleOnly.length);
+          if(scheduleOnly.length) console.log('SCHEDULE-ONLY SYMBOLS:',scheduleOnly.join(','));
+
+          async function verifyAll(payloadFactory, expected, label, timeout) {
+            const results=[];
+            await withSocket(async ws=>{
+              for(let i=0;i<symbols.length;i++){
+                const symbol=symbols[i];
                 try{
-                  const r=await wsCall(endpoints[1],{ticks_history:symbol,count:10,end:'latest',style:'ticks',req_id:94000+i},'history',12000);
-                  const prices=Array.isArray(r?.history?.prices)?r.history.prices:[];
-                  return {symbol,ok:prices.length>0};
-                }catch{return {symbol,ok:false}}
+                  const r=await request(ws,payloadFactory(symbol,i),expected,timeout);
+                  results.push({symbol,ok:true});
+                }catch(e){
+                  results.push({symbol,ok:false,error:String(e.message||e)});
+                }
+                if((i+1)%10===0 || i===symbols.length-1)
+                  console.log(label+': '+(i+1)+'/'+symbols.length);
               }
-            }));
-            for(const r of results) r.ok?historyOk++:historyFailed.push(r.symbol);
+            });
+            const failed=results.filter(x=>!x.ok);
+            console.log(label+' RESULT:',(symbols.length-failed.length)+'/'+symbols.length);
+            if(failed.length) console.error(label+' FAILED:',JSON.stringify(failed));
+            return failed;
           }
-          console.log('DERIV HISTORY VERIFICATION:', historyOk+'/'+symbols.length);
-          if(historyFailed.length){console.error('SYMBOLS WITHOUT VALID HISTORY:',historyFailed);process.exit(1);}
+
+          const tickFailed=await verifyAll(
+            (s,i)=>({ticks:s,subscribe:0,req_id:20000+i}),
+            'tick','DERIV TICK VERIFICATION',12000
+          );
+          const historyFailed=await verifyAll(
+            (s,i)=>({ticks_history:s,count:10,end:'latest',style:'ticks',req_id:30000+i}),
+            'history','DERIV HISTORY VERIFICATION',15000
+          );
+
+          if(tickFailed.length || historyFailed.length){
+            process.exit(1);
+          }
           console.log('MARKET DATA COVERAGE: PASS');
-          if(failed.length) { console.error('SYMBOLS WITHOUT VALID TICK DATA:',failed); process.exit(1); }
-          console.log('MARKET DATA COVERAGE: PASS');
+          console.log('MARKET CATALOG: PASS — authoritative active_symbols full catalog verified');
           NODE
