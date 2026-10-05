@@ -103,7 +103,9 @@ function extractTradingTimeSymbols(node:any, parents:string[] = [], out:Map<stri
     const nextParents = [...parents, key];
     const lowerKeys = Object.keys(value).map(k => k.toLowerCase());
     const looksLikeSchedule = lowerKeys.some(k => ["open","close","times","trading_days","events"].includes(k));
-    if (looksLikeSchedule && /^[A-Za-z0-9_]{2,30}$/.test(key) && !["open","close","times","trading_days","events"].includes(key.toLowerCase())) {
+    const hasTimesObject = value.times && typeof value.times === "object";
+    const isSymbolKey = /^[A-Za-z0-9_]{2,30}$/.test(key) && !["open","close","times","trading_days","events"].includes(key.toLowerCase());
+    if (isSymbolKey && (looksLikeSchedule || hasTimesObject)) {
       out.set(key, { symbol: key, name: key, market: parents.at(-2) || parents.at(-1) || "", subgroup: parents.at(-1) || "" });
     }
     extractTradingTimeSymbols(value, nextParents, out);
