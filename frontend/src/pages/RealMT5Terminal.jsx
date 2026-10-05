@@ -32,8 +32,8 @@ export default function RealMT5Terminal(){
  const initialSymbol=params.get("symbol")||"1HZ100V";
  const [side,setSide]=useState(false),[symbol,setSymbol]=useState(initialSymbol),[price,setPrice]=useState(null),[feed,setFeed]=useState("CONNECTING");
  const [candles,setCandles]=useState([]),[ticks,setTicks]=useState([]),[tf,setTf]=useState(300),[account,setAccount]=useState(null),[portfolio,setPortfolio]=useState([]),[history,setHistory]=useState([]),[statements,setStatements]=useState([]);
- const historySocketRef=useRef(null),refreshBusy=useRef(false),retryRef=useRef(null),lastTickRef=useRef(0),tickWatchdogRef=useRef(null);
- const lastGoodSnapshotRef=useRef(null),refreshDelayRef=useRef(15000);
+ const historySocketRef=useRef(null),refreshBusy=useRef(false),retryRef=useRef(null),lastTickRef=useRef(0),tickWatchdogRef=useRef(null);\n useEffect(()=>{tfRef.current=tf},[tf]);
+ const lastGoodSnapshotRef=useRef(null),refreshDelayRef=useRef(15000),tfRef=useRef(300);
  const [error,setError]=useState(""),[lastSync,setLastSync]=useState(null),[syncStatus,setSyncStatus]=useState("PENDING"),[syncOpen,setSyncOpen]=useState(0),[syncClosed,setSyncClosed]=useState(0);
 
  const refresh=async()=>{
@@ -190,7 +190,7 @@ export default function RealMT5Terminal(){
    const q=Number(t?.quote),epoch=Number(t?.epoch);
    if(!Number.isFinite(q)||!Number.isFinite(epoch))return;
    setPrice(q);setFeed("LIVE");setTicks(a=>[{quote:q,epoch},...a].slice(0,40));
-   const bucket=Math.floor(epoch/tf)*tf;
+   const activeTf=tfRef.current;\n   const bucket=Math.floor(epoch/activeTf)*activeTf;
    setCandles(a=>{const last=a[a.length-1];if(!last||last.time!==bucket)return [...a,{time:bucket,open:q,high:q,low:q,close:q}].slice(-180);return [...a.slice(0,-1),{...last,high:Math.max(last.high,q),low:Math.min(last.low,q),close:q}]});
  };
 
