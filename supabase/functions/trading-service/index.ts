@@ -108,8 +108,37 @@ function wsCall(url: string, payload: Record<string, unknown>, expected: string,
       if (data.msg_type === expected && (!data.req_id || data.req_id === reqId))
         finish(resolve, data);
     });
-    ws.addEventListener("error", () => finish(reject, new Error("DERIV_WEBSOCKET_ERROR")));
+    ws.addEventListener("error", () => finish(reject, new Error("DERIV_WEBSOCKET_ERROR")));\n    ws.addEventListener("close", () => finish(reject, new Error("DERIV_WEBSOCKET_CLOSED")));
   });
+}
+
+const PUBLIC_DERIV_WS_ENDPOINTS = [
+  "wss://api.derivws.com/trading/v1/options/ws/public",
+  "wss://ws.binaryws.com/websockets/v3",
+  "wss://ws.derivws.com/websockets/v3?app_id=1089"
+];
+
+async function publicWsCall(payload: Record<string, unknown>, expected: string, timeoutMs = 8000) {
+  let lastError: unknown = null;
+  for (const endpoint of PUBLIC_DERIV_WS_ENDPOINTS) {
+    try {
+      return await wsCall(endpoint, payload, expected, timeoutMs);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("DERIV_PUBLIC_MARKET_DATA_UNAVAILABLE");
+}
+
+function normalizePublicMarket(item: any) {
+  const symbol = String(item?.underlying_symbol ?? item?.symbol ?? "").trim();
+  if (!symbol) return null;
+  return {
+    symbol,
+    name: String(item?.underlying_symbol_name ?? item?.display_name ?? symbol),
+    market: String(item?.market_display_name ?? item?.market ?? item?.underlying_symbol_type ?? "Other"),
+    subgroup: String(item?.subgroup ?? item?.submarket ?? "")
+  };
 }
 
 async function realWsCall(userId: string, payload: Record<string, unknown>, expected: string) {
@@ -297,6 +326,50 @@ async function reconcileRealState(userId: string, balancePayload: any, profitPay
 }
 
 async function handle(userId: string, body: any) {
+  const op = String(body.operation || body.action || "status");
+
+  if (op === "public_market_catalog") {
+    const response = await publicWsCall({ active_symbols: "full", req_id: 61001 }, "active_symbols");
+    const markets = Array.isArray(response?.active_symbols)
+      ? response.active_symbols.map(normalizePublicMarket).filter(Boolean)
+      : [];
+    if (!markets.length) throw new Error("DERIV_PUBLIC_MARKET_CATALOG_EMPTY");
+
+    const updatedAt = new Date().toISOString();
+    const rows = markets.map((item: any) => ({
+      source: "deriv",
+      symbol: item.symbol,
+      display_name: item.name,
+      market: item.market,
+      submarket: item.subgroup,
+      is_active: true,
+      raw: item,
+      updated_at: updatedAt
+    }));
+    const { error: syncError } = await db.from("market_symbols").upsert(rows, { onConflict: "symbol" });
+    if (syncError) throw syncError;
+
+    return { markets, count: markets.length, source: "server_deriv_public_websocket", observed_at: updatedAt };
+  }
+
+  if (op === "public_market_tick") {
+    const symbol = String(body.symbol || "").trim();
+    if (!symbol || symbol.length > 64) throw new Error("MARKET_SYMBOL_REQUIRED");
+    const response = await publicWsCall({ ticks: symbol, subscribe: 0, req_id: 61002 }, "tick");
+    const tick = response?.tick;
+    const quote = Number(tick?.quote);
+    const epoch = Number(tick?.epoch);
+    if (!Number.isFinite(quote) || !Number.isFinite(epoch)) throw new Error("DERIV_PUBLIC_TICK_INVALID");
+    return {
+      symbol: String(tick?.symbol ?? tick?.underlying_symbol ?? symbol),
+      quote,
+      epoch,
+      pipSize: tick?.pip_size ?? null,
+      source: "server_deriv_public_websocket"
+    };
+  }
+
+
   const op = String(body.operation || body.action || "status");
 
   if (op === "balance_reconcile") {
