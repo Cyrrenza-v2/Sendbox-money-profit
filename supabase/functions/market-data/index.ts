@@ -218,7 +218,9 @@ Deno.serve(async req => {
           : "DERIV_TRADING_TIMES_UNAVAILABLE";
       }
 
+      const scheduleSymbols = scheduleResult.status === 'fulfilled' ? extractTradingTimeSymbols(scheduleResult.value?.trading_times) : new Map();
       const mergedMarkets = Array.from(bySymbol.values()).filter(Boolean);
+      const scheduleOnlySymbols = Array.from(scheduleSymbols.keys()).filter(symbol => !markets.some((item:any)=>item.symbol===symbol));
       const updatedAt = new Date().toISOString();
       const rows = mergedMarkets.map((item: any) => ({
         source: "deriv",
@@ -232,7 +234,7 @@ Deno.serve(async req => {
       }));
       const { error } = await db.from("market_symbols").upsert(rows, { onConflict: "symbol" });
       if (error) throw error;
-      return json({ ok: true, data: { markets: mergedMarkets, count: mergedMarkets.length, activeSymbolCount: markets.length, tradingTimesCount: Math.max(0, mergedMarkets.length - markets.length), source: "server_deriv_public_websocket+trading_times", tradingTimesError, observed_at: updatedAt } });
+      return json({ ok: true, data: { markets: mergedMarkets, count: mergedMarkets.length, activeSymbolCount: markets.length, tradingTimesCount: Math.max(0, mergedMarkets.length - markets.length), tradingTimesSymbolCount: scheduleSymbols.size, scheduleOnlySymbolCount: scheduleOnlySymbols.length, scheduleOnlySymbols: scheduleOnlySymbols.slice(0,200), source: "server_deriv_public_websocket+trading_times", tradingTimesError, observed_at: updatedAt } });
     }
 
     if (op === "tick") {
