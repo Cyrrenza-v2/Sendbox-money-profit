@@ -1,0 +1,10 @@
+project_id = "qalowxnqngzsdlayqivr"
+
+[functions.deriv-oauth]
+verify_jwt = false
+
+[functions.deriv-demo-session]
+verify_jwt = true
+
+[functions.mt5-bridge]
+verify_jwt = true
