@@ -4,7 +4,7 @@ import LiveMarketPanel from "../components/LiveMarketPanel";
 import { sandboxEngine } from "../services/sandboxEngine";
 const fmt = (n, digits = 5) => Number.isFinite(Number(n)) ? Number(n).toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: Math.min(2, digits) }) : "—";
 const TIMEFRAMES = [
-  ...[1,2,3,4,5,10,15,20,30].map(m=>({label:`${m}m`,value:`M${m}`,seconds:m*60})),
+  ...Array.from({length:30},(_,i)=>i+1).map(m=>({label:`${m}m`,value:`M${m}`,seconds:m*60})),
   ...[1,2,3,4,5,6,8,12].map(h=>({label:`${h}h`,value:`H${h}`,seconds:h*3600})),
   {label:"1d",value:"D1",seconds:86400},{label:"1w",value:"W1",seconds:604800},{label:"1mo",value:"MN1",seconds:2592000}
 ];
@@ -140,6 +140,7 @@ export default function TradingTerminal() {
         <div className="vt-order-price"><div><span>Observed price</span><strong>{tick?fmt(tick.price,8):"Waiting for feed…"}</strong></div><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}>{feed==="LIVE"?"LIVE":"WAITING"}</span></div>
         <label className="vt-label">Position size<input type="number" min="0.01" step="0.01" inputMode="decimal" value={quantity} onChange={e=>setQuantity(e.target.value)}/></label>
         <div className="vt-risk-fields"><label className="vt-label">Stop loss <input type="number" min="0" step="any" inputMode="decimal" placeholder="Optional price" value={stopLoss} onChange={e=>setStopLoss(e.target.value)}/></label><label className="vt-label">Take profit <input type="number" min="0" step="any" inputMode="decimal" placeholder="Optional price" value={takeProfit} onChange={e=>setTakeProfit(e.target.value)}/></label></div>
+        <div className="vt-e2e-actions"><button className="vt-ai-button" disabled={e2eBusy||busy||!tick||!account||!candles.length} onClick={runFullE2E}>{e2eBusy?"RUNNING PHASE 1 E2E…":"RUN PHASE 1 FULL E2E"}</button></div>
         <div className="vt-order-actions"><button className="vt-buy" disabled={busy||!tick||!account} onClick={()=>execute("BUY")}>{busy?"PROCESSING…":"BUY / LONG"}</button><button className="vt-sell" disabled={busy||!tick||!account} onClick={()=>execute("SELL")}>{busy?"PROCESSING…":"SELL / SHORT"}</button></div>
         <small className="vt-gate-note">Phase 1 is sandbox-only. Orders are virtual and are sent only to the VELTRION sandbox service. Real broker execution is not exposed from this terminal.</small>
       </section>
