@@ -84,9 +84,16 @@ jobs:
   market-data-verification:
     runs-on: ubuntu-latest
     steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install WebSocket client
+        run: npm install --no-save ws@8
       - name: Verify live Deriv catalog and tick coverage
         run: |
           node <<'NODE'
+          const { WebSocket } = require('ws');
           const endpoints = [
             'wss://ws.derivws.com/websockets/v3?app_id=1089',
             'wss://ws.binaryws.com/websockets/v3'
