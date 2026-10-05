@@ -18,6 +18,7 @@ export default function Wallet() {
   const [destination, setDestination] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [syncBusy, setSyncBusy] = useState(false);
 
   async function load() {
     setState(s => ({ ...s, loading: true, error: "" }));
@@ -83,6 +84,20 @@ export default function Wallet() {
 
   useEffect(() => { load(); }, []);
 
+  async function syncRealAccount() {
+    setSyncBusy(true);
+    setNotice("");
+    try {
+      const { data, error } = await supabase.functions.invoke("trading-service", { body: { operation: "balance_reconcile" } });
+      if (error) throw error;
+      if (!data?.ok || !data?.data?.snapshot_saved) throw new Error(data?.error || "REAL_ACCOUNT_SYNC_FAILED");
+      setNotice(`Real account synchronized: ${money(data.data.balance, data.data.currency)}. Wallet ledger and reconciliation snapshot refreshed.`);
+      await load();
+    } catch (e) {
+      setNotice(e?.message || "REAL_ACCOUNT_SYNC_FAILED");
+    } finally { setSyncBusy(false); }
+  }
+
   const wallet = state.wallet;
   const available = Number(wallet?.available_balance || 0);
   const reserved = Number(wallet?.reserved_balance || 0);
@@ -134,7 +149,7 @@ export default function Wallet() {
           <h1>Profit Wallet</h1>
           <p>Tracks verified real-trading profits and controlled withdrawals. Sandbox results are displayed separately and are not treated as withdrawable funds.</p>
         </div>
-        <span className="vel-data-source">SEND BOX PROFIT WALLET · WITHDRAWAL CONTROLLED</span>
+        <span className="vel-data-source">REAL ACCOUNT + PROFIT WALLET · READ ONLY</span>
       </div>
 
       {state.error && <div className="vel-error" role="status">{state.error}</div>}
@@ -145,7 +160,7 @@ export default function Wallet() {
           <div className="vel-state">
             <div className="vel-state-mark">—</div>
             <h3>Real trading account not connected</h3>
-            <p>Connect and verify the Sendbox real trading account before a profit wallet can be used.</p>
+            <p>Connect and verify the Deriv real account from Connections / Deriv, then synchronize the live account and wallet here.</p>\n            <button className="button primary" onClick={syncRealAccount} disabled={syncBusy}>{syncBusy ? "SYNCING REAL ACCOUNT…" : "SYNC REAL ACCOUNT + WALLET"}</button>
           </div>
         </div>
       )}
@@ -191,7 +206,7 @@ export default function Wallet() {
             </div>
           ) : (
             <>
-              <section className="vel-panel wallet-actions">
+              <section className="vel-panel wallet-actions">\n                <button className="button secondary" onClick={syncRealAccount} disabled={syncBusy}>{syncBusy ? "SYNCING…" : "SYNC LIVE ACCOUNT + WALLET"}</button>
                 <div className="vel-panel-title">WITHDRAW REALIZED PROFIT</div>
                 <div className="wallet-security-note">
                   <span>SEND BOX CONTROLLED</span>
@@ -223,11 +238,11 @@ export default function Wallet() {
                 <button
                   className="button primary full"
                   onClick={requestWithdrawal}
-                  disabled={busy || withdrawable <= 0 || !withdrawAmount || !destination.trim()}
+                  disabled={true}
                 >
-                  {busy ? "RESERVING…" : "REQUEST PROFIT WITHDRAWAL"}
+                  {"PRODUCTION FREEZE — WITHDRAWALS LOCKED"}
                 </button>
-                <p className="wallet-footnote">Requests reserve profit atomically. Final settlement is performed through the authorized Sendbox withdrawal flow, not by the browser.</p>
+                <p className="wallet-footnote">Withdrawals remain disabled while the production safety freeze is ON. This screen is read-only for live verification.</p>
               </section>
 
               <section className="vel-panel">
