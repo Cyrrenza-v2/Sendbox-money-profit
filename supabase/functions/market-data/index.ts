@@ -237,7 +237,7 @@ Deno.serve(async req => {
       return json({ ok: true, data: { markets: mergedMarkets, count: mergedMarkets.length, activeSymbolCount: markets.length, tradingTimesCount: Math.max(0, mergedMarkets.length - markets.length), tradingTimesSymbolCount: scheduleSymbols.size, scheduleOnlySymbolCount: scheduleOnlySymbols.length, scheduleOnlySymbols: scheduleOnlySymbols.slice(0,200), source: "server_deriv_public_websocket+trading_times", tradingTimesError, observed_at: updatedAt } });
     }
 
-    if (op === "tick") {
+    if (op === "time") {\n      const response = await publicWsCall({ time: 1, req_id: 62004 }, "time", 4000);\n      const serverEpoch = Number(response?.time);\n      if (!Number.isFinite(serverEpoch)) throw new Error("DERIV_SERVER_TIME_INVALID");\n      const localEpoch = Math.floor(Date.now() / 1000);\n      return json({ ok: true, data: { serverEpoch, localEpoch, offsetSeconds: serverEpoch - localEpoch, observed_at: new Date().toISOString(), source: "deriv_server_time" } });\n    }\n\n    if (op === "tick") {
       const symbol = String(body.symbol || "").trim();
       if (!symbol || symbol.length > 64) return json({ ok: false, error: "MARKET_SYMBOL_REQUIRED" }, 400);
       const response = await publicWsCall({ ticks: symbol, subscribe: 0, req_id: 62002 }, "tick");
