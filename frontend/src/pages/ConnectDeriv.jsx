@@ -56,12 +56,22 @@ export default function ConnectDeriv() {
       if (data?.deriv_loginid) {
         const { data: providerAccount, error: providerError } = await supabase
           .from("deriv_accounts")
-          .select("account_type")
+          .select("account_type,status")
           .eq("user_id", session.user.id)
           .eq("deriv_account_id", data.deriv_loginid)
+          .order("updated_at", { ascending: false })
+          .limit(1)
           .maybeSingle();
-        if (providerError) throw providerError;
-        setAccountType(String(providerAccount?.account_type || "unknown").toLowerCase());
+
+        // Account classification is secondary to connection health. Do not turn
+        // a valid connected OAuth session into ERROR just because this read fails.
+        if (providerError) {
+          setAccountType("unknown");
+        } else {
+          const type = String(providerAccount?.account_type || "").toLowerCase();
+          const providerStatus = String(providerAccount?.status || "").toLowerCase();
+          setAccountType(type === "demo" && ["", "connected"].includes(providerStatus) ? "demo" : type || "unknown");
+        }
       } else {
         setAccountType("unknown");
       }
