@@ -58,7 +58,7 @@ export default function RealMT5Terminal(){
  const historySocketRef=useRef(null),refreshBusy=useRef(false),retryRef=useRef(null),realRetryRef=useRef(null),realRetryAttemptRef=useRef(0),lastTickRef=useRef(0),tickWatchdogRef=useRef(null),tfRef=useRef(300);
  const lastGoodSnapshotRef=useRef(null),refreshDelayRef=useRef(15000);
  const symbolRef=useRef(initialSymbol);
- const reconnectTimerRef=useRef(null);
+ const marketDataKeyRef=useRef(`${initialSymbol}:300`);
  const tickWatchdogRef=useRef(null);
  useEffect(()=>{tfRef.current=tf},[tf]);
  useEffect(()=>{
@@ -142,7 +142,9 @@ export default function RealMT5Terminal(){
    let dead=false,ws=null,retryTimer=null,serverTimer=null,connectTimeout=null;
    let serverFallbackActive=false;
    let endpointIndex=0;
-   let lastReceivedSymbol=symbol;
+   const marketDataKey=`${symbol}:${tf}`;
+   const resetMarketData=marketDataKeyRef.current!==marketDataKey;
+   marketDataKeyRef.current=marketDataKey;
    let reconnectAttempt=0;
 
    const loadServerHistory = async () => {
@@ -278,7 +280,7 @@ export default function RealMT5Terminal(){
 
    // Only reset market data when the user intentionally changes symbol/timeframe.
    // Browser reconnects keep the last valid candles/ticks/price visible.
-   if(symbolRef.current!==lastReceivedSymbol || tfRef.current!==tf){
+   if(resetMarketData){
      setCandles([]);
      setTicks([]);
      setPrice(null);
@@ -292,7 +294,6 @@ export default function RealMT5Terminal(){
      clearTimeout(connectTimeout);
      stopServerFallback();
      clearTimeout(tickWatchdogRef.current);
-     clearTimeout(reconnectTimerRef.current);
      try{ws?.close()}catch{}
      historySocketRef.current=null;
    };
