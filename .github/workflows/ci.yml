@@ -92,7 +92,7 @@ jobs:
           set -euo pipefail
           RESPONSE=$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Fgithub.com%2FCyrrenza-v2%2FSendbox-money-profit" \
             | jq -r '.value')
-          RESULT=$(curl -fsS -X POST \
+          RESULT=$(curl -sS -X POST \
             -H "Authorization: Bearer ${RESPONSE}" \
             -H "Content-Type: application/json" \
             "https://qalowxnqngzsdlayqivr.supabase.co/functions/v1/market-data-ci")
