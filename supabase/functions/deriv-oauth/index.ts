@@ -5,7 +5,7 @@ const secret = Deno.env.get(["SUPABASE","SERVICE","ROLE","KEY"].join("_"))!;
 const admin = createClient(url, secret, { auth: { persistSession: false } });
 
 const redirect = "https://qalowxnqngzsdlayqivr.supabase.co/functions/v1/deriv-oauth/callback";
-const appUrl = (Deno.env.get("VELTRION_APP_URL") || "https://sendbox-money-profit-git-feat-deriv-dem-7bc095-uasianubong-2840.vercel.app").replace(/\/$/, "");
+const appUrl = (Deno.env.get("VELTRION_APP_URL") || "https://cyrrenza-v2.github.io/Sendbox-money-profit").replace(/\/$/, "");
 const client = Deno.env.get("DERIV_OAUTH_CLIENT_ID") || Deno.env.get("DERIV_CLIENT_ID") || "34yFXgA3K5sZIE56LQI7J";
 
 const cors = {
@@ -131,6 +131,9 @@ async function callback(code: string, state: string) {
   // may be synchronized, but real execution remains separately gated.
   const primaryAccounts = demo.length ? demo : real;
   const uid = p.user_id;
+  const { data: existingCredential, error: existingCredentialError } = await admin.schema("private")
+    .from("deriv_oauth_credentials").select("refresh_token").eq("user_id", uid).maybeSingle();
+  if (existingCredentialError) throw existingCredentialError;
   const ids = primaryAccounts.map((a: any) => String(a.account_id || "")).filter(Boolean);
   const now = new Date().toISOString();
 
@@ -140,7 +143,7 @@ async function callback(code: string, state: string) {
   const { error: credentialError } = await admin.schema("private").from("deriv_oauth_credentials").upsert({
     user_id: uid,
     access_token: td.access_token,
-    refresh_token: td.refresh_token || null,
+    refresh_token: td.refresh_token || existingCredential?.refresh_token || null,
     token_type: td.token_type || "Bearer",
     expires_at: td.expires_in ? new Date(Date.now() + Number(td.expires_in) * 1000).toISOString() : null,
     scopes: String(td.scope || "").split(/[ ,]+/).filter(Boolean),
