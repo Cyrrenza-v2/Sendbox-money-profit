@@ -135,8 +135,8 @@ export default function RealMT5Terminal(){
    const loadServerHistory = async () => {
      if(dead) return;
      try {
-       const {data,error:invokeError}=await supabase.functions.invoke("market-data",{body:{operation:"history",symbol,granularity:tf}});
-       const raw=data?.ok&&!invokeError?(data.data?.candles||[]):[];
+       const data=await invoke("market-data",{operation:"history",symbol,granularity:tf});
+       const raw=data?.candles||[];
        if(raw.length){
          setCandles(raw.map(c=>({time:Number(c.epoch),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)}))
            .filter(c=>[c.time,c.open,c.high,c.low,c.close].every(Number.isFinite))
@@ -152,10 +152,9 @@ export default function RealMT5Terminal(){
      const poll=async()=>{
        if(dead||!serverFallbackActive)return;
        try{
-         const {data,error:invokeError}=await supabase.functions.invoke("market-data",{body:{operation:"tick",symbol}});
-         const t=data?.ok?data.data:null;
+         const t=await invoke("market-data",{operation:"tick",symbol});
          const q=Number(t?.quote),epoch=Number(t?.epoch);
-         if(!invokeError&&Number.isFinite(q)&&Number.isFinite(epoch)){
+         if(Number.isFinite(q)&&Number.isFinite(epoch)){
            setFeed("LIVE_PUBLIC_MARKET");
            setError("");
            onTick({quote:q,epoch,pip_size:t?.pipSize??null});
