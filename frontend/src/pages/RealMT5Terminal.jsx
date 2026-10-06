@@ -59,7 +59,7 @@ export default function RealMT5Terminal(){
  const lastGoodSnapshotRef=useRef(null),refreshDelayRef=useRef(15000);
  const symbolRef=useRef(initialSymbol);
  const marketDataKeyRef=useRef(`${initialSymbol}:300`);
- const tickWatchdogRef=useRef(null);
+ const tickWatchdogRef=useRef(null),historyWatchdogRef=useRef(null),seenTicksRef=useRef(new Set());
  useEffect(()=>{tfRef.current=tf},[tf]);
  useEffect(()=>{
    symbolRef.current=symbol;
@@ -147,7 +147,7 @@ export default function RealMT5Terminal(){
    marketDataKeyRef.current=marketDataKey;
    let reconnectAttempt=0;
 
-   const loadServerHistory = async () => {
+   const mergeCandles = (incoming) => { const normalized=incoming.map(c=>({time:Number(c.epoch),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)})).filter(c=>[c.time,c.open,c.high,c.low,c.close].every(Number.isFinite)).sort((a,b)=>a.time-b.time); if(!normalized.length)return; setCandles(prev=>{const map=new Map(prev.map(c=>[c.time,c]));normalized.forEach(c=>map.set(c.time,c));return Array.from(map.values()).sort((a,b)=>a.time-b.time).slice(-180)}); };\n\n   const loadServerHistory = async () => {
      if(dead) return;
      try {
        const data=await invoke("market-data",{operation:"history",symbol,granularity:tf});
@@ -193,7 +193,7 @@ export default function RealMT5Terminal(){
    };
 
    const armTickWatchdog=()=>{
-     clearTimeout(tickWatchdogRef.current);
+     clearTimeout(tickWatchdogRef.current); clearTimeout(historyWatchdogRef.current);
      tickWatchdogRef.current=setTimeout(()=>{
        if(dead)return;
        if(Date.now()-lastTickRef.current>7000){
@@ -210,7 +210,7 @@ export default function RealMT5Terminal(){
      clearTimeout(connectTimeout);
      try{
        setFeed("CONNECTING_PUBLIC_MARKET");
-       ws=new WebSocket(DERIV_PUBLIC_HISTORY_ENDPOINTS[endpointIndex]);
+       ws=new WebSocket(DERIV_PUBLIC_HISTORY_ENDPOINTS[endpointIndex]);\n       let historyReceived=false;
        historySocketRef.current=ws;
        connectTimeout=setTimeout(()=>{
          if(!dead&&Date.now()-lastTickRef.current>3000) pollServerMarket();
@@ -221,7 +221,7 @@ export default function RealMT5Terminal(){
          lastTickRef.current=Date.now();
          reconnectAttempt=0;
          armTickWatchdog();
-         ws.send(JSON.stringify({ticks_history:symbol,adjust_start_time:1,count:180,end:"latest",style:"candles",granularity:tf,req_id:7001}));
+         ws.send(JSON.stringify({ticks_history:symbol,adjust_start_time:1,count:180,end:"latest",style:"candles",granularity:tf,req_id:7001}));\n         clearTimeout(historyWatchdogRef.current);\n         historyWatchdogRef.current=setTimeout(()=>{if(!dead&&!historyReceived)loadServerHistory()},4000);
          ws.send(JSON.stringify({ticks:symbol,subscribe:1,req_id:91001}));
          clearTimeout(connectTimeout);
        };
@@ -306,7 +306,11 @@ export default function RealMT5Terminal(){
  const onTick=t=>{
    const q=Number(t?.quote),epoch=Number(t?.epoch);
    if(!Number.isFinite(q)||!Number.isFinite(epoch))return;
-   setPrice(q);setFeed("LIVE");setTicks(a=>[{quote:q,epoch},...a].slice(0,40));
+   const tickKey=`${epoch}:${q}`;
+   if(seenTicksRef.current.has(tickKey))return;
+   seenTicksRef.current.add(tickKey);
+   if(seenTicksRef.current.size>200){const first=seenTicksRef.current.values().next().value;seenTicksRef.current.delete(first)}
+   setPrice(q);setFeed("LIVE");setTicks(a=>[{quote:q,epoch},...a.filter(x=>`${x.epoch}:${x.quote}`!==tickKey)].slice(0,40));
    const activeTf=tfRef.current;
    const bucket=Math.floor(epoch/activeTf)*activeTf;
    setCandles(a=>{
