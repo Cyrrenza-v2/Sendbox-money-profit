@@ -86,8 +86,9 @@ function classifyDerivMarket(item) {
 }
 
 const DERIV_PUBLIC_ENDPOINTS = [
-  "wss://ws.derivws.com/websockets/v3?app_id=1089",
-  "wss://ws.binaryws.com/websockets/v3"
+  "wss://api.derivws.com/trading/v1/options/ws/public",
+  "wss://ws.binaryws.com/websockets/v3",
+  "wss://ws.derivws.com/websockets/v3?app_id=1089"
 ];
 const DERIV_DISCOVERY_TIMEOUT_MS = 20000;
 const DERIV_RETRY_BASE_MS = 2000;
@@ -246,14 +247,11 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       const symbols = Array.from(new Set(list.map(item => String(item?.symbol || "").trim()).filter(Boolean)));
       if (!symbols.length) return;
 
-      // Deriv accepts an array for ticks, but subscribing one symbol at a time is
-      // more reliable across the legacy/public WebSocket gateways and makes each
-      // subscription independently recoverable.
+      // Deriv supports an array of symbols in one tick subscription. This avoids
+      // bursting one request per market and keeps the same socket reusable.
       try {
         socket.send(JSON.stringify({ forget_all: "ticks", req_id: nextReqId() }));
-        symbols.forEach(symbol => {
-          socket.send(JSON.stringify({ ticks: symbol, subscribe: 1, req_id: nextReqId() }));
-        });
+        socket.send(JSON.stringify({ ticks: symbols, subscribe: 1, req_id: nextReqId() }));
         activeSubscription = "__ALL__";
       } catch {
         activeSubscription = null;
