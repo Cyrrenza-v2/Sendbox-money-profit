@@ -1,8 +1,9 @@
 import { useMemo } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 export default function MarketDetails(){
  const [params]=useSearchParams();
+ const navigate=useNavigate();
  const symbol=useMemo(()=>params.get("symbol")||"frxEURUSD",[params]);
  const label=symbol==="frxEURUSD"?"EUR/USD":symbol.replace(/^frx/,"");
  const terminalPath=`/app/trading/real-terminal?symbol=${encodeURIComponent(symbol)}`;
@@ -24,7 +25,7 @@ export default function MarketDetails(){
     <div className="market-choice-top"><span className="market-choice-icon">WEB</span><span className="market-choice-status">AVAILABLE</span></div>
     <h2>Web Terminal</h2>
     <p>Open the verified market chart, live quote, AI review and VELTRION sandbox trading workflow for this symbol.</p>
-    <Link className="vel-button market-terminal-link" to={terminalPath}>Open Web Terminal <span>→</span></Link>
+    <button type="button" className="vel-button market-terminal-link" onClick={()=>navigate(terminalPath)}>Open Web Terminal <span>→</span></button>
    </section>
    <section className="vel-panel market-choice-card">
     <div className="market-choice-top"><span className="market-choice-icon">MT5</span><span className="market-choice-status muted">COMING LATER</span></div>
