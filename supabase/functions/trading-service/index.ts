@@ -26,7 +26,7 @@ async function getUser(req: Request) {
   return data.user || null;
 }
 
-async function realContext(userId: string) {
+async function realContext(userId: string, forceRefresh = false) {
   const [{ data: account, error: accountError }, { data: cred, error: credError }] = await Promise.all([
     db.from("real_trading_accounts")
       .select("id,deriv_account_id,currency,balance,equity,is_active,emergency_stopped")
@@ -45,7 +45,7 @@ async function realContext(userId: string) {
   if (!scopes.includes("trade")) throw new Error("DERIV_TRADE_SCOPE_REQUIRED");
   let accessToken = cred.access_token;
   const expiresAt = cred.expires_at ? Date.parse(cred.expires_at) : 0;
-  if (expiresAt && expiresAt <= Date.now() + 120000) {
+  if (forceRefresh || (expiresAt && expiresAt <= Date.now() + 120000)) {
     if (!cred.refresh_token) throw new Error("DERIV_REAUTH_REQUIRED");
     const clientId = Deno.env.get("DERIV_OAUTH_CLIENT_ID") || Deno.env.get("DERIV_CLIENT_ID") || "34yFXgA3K5sZIE56LQI7J";
     const refresh = await fetch("https://auth.deriv.com/oauth2/token", {
@@ -146,13 +146,14 @@ async function realWsCall(userId: string, payload: Record<string, unknown>, expe
   let lastError: unknown = null;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const { account, accessToken } = await realContext(userId);
+      const forceRefresh = attempt > 0 && /AUTH|UNAUTHORIZED|TOKEN|CREDENTIAL/i.test(String(lastError instanceof Error ? lastError.message : ""));
+      const { account, accessToken } = await realContext(userId, forceRefresh);
       const url = await otpUrl(String(account.deriv_account_id), accessToken);
       return await wsCall(url, payload, expected);
     } catch (error) {
       lastError = error;
       const message = error instanceof Error ? error.message : "";
-      if (!/WEBSOCKET|CLOSED|TIMEOUT/.test(message) || attempt === 2) throw error;
+      if (!/WEBSOCKET|CLOSED|TIMEOUT|AUTH|UNAUTHORIZED|TOKEN|CREDENTIAL/i.test(message) || attempt === 2) throw error;
       await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
     }
   }
