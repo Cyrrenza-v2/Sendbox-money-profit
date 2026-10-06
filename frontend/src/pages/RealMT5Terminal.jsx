@@ -129,45 +129,99 @@ export default function RealMT5Terminal(){
 
 
  useEffect(()=>{
-   let dead=false,ws=null,retryTimer=null,refreshTimer=null;
+   let dead=false,ws=null,retryTimer=null,refreshTimer=null,serverTimer=null,connectTimeout=null;
+   let serverFallbackActive=false;
    const accountId=String(account?.balance?.loginid||account?.loginid||account?.account_id||"").trim();
+
+   const pollServerMarket=()=>{
+     if(dead||serverFallbackActive)return;
+     serverFallbackActive=true;
+     setFeed("CONNECTING_PUBLIC_MARKET");
+     const poll=async()=>{
+       if(dead||!serverFallbackActive)return;
+       try{
+         const {data,error:invokeError}=await supabase.functions.invoke("market-data",{body:{operation:"tick",symbol}});
+         const t=data?.ok?data.data:null;
+         const q=Number(t?.quote),epoch=Number(t?.epoch);
+         if(!invokeError&&Number.isFinite(q)&&Number.isFinite(epoch)){
+           setFeed("LIVE_PUBLIC_MARKET");
+           setError("");
+           onTick({quote:q,epoch,pip_size:t?.pipSize??null});
+         }
+       }catch{}
+       if(!dead&&serverFallbackActive)serverTimer=setTimeout(poll,2500);
+     };
+     poll();
+   };
+
+   const stopServerFallback=()=>{
+     serverFallbackActive=false;
+     clearTimeout(serverTimer);
+     serverTimer=null;
+   };
+
    const connect=async()=>{
      if(dead)return;
+     stopServerFallback();
+     clearTimeout(connectTimeout);
      try{
        setFeed("CONNECTING_REAL_MARKET");
        const session=await invoke("deriv-real-session",{account_id:accountId||undefined});
        const url=session?.websocket?.url;
        if(!url)throw new Error("REAL_MARKET_SESSION_UNAVAILABLE");
        ws=new WebSocket(url);
+
+       connectTimeout=setTimeout(()=>{
+         if(!dead&&Date.now()-lastTickRef.current>7000){
+           try{ws?.close()}catch{}
+           pollServerMarket();
+         }
+       },8000);
+
        ws.onopen=()=>{
          if(dead){try{ws.close()}catch{};return}
          realRetryAttemptRef.current=0;
-         setFeed("LIVE_REAL_MARKET");
+         setFeed("AUTHENTICATED_REAL_STREAM");
          lastTickRef.current=Date.now();
          ws.send(JSON.stringify({ticks:symbol,subscribe:1,req_id:91001}));
          clearTimeout(refreshTimer);
          clearTimeout(tickWatchdogRef.current);
          refreshTimer=setTimeout(()=>{try{ws.close()}catch{}},90000);
-         tickWatchdogRef.current=setTimeout(()=>{try{ws.close()}catch{}},10000);
+         tickWatchdogRef.current=setTimeout(()=>{
+           if(Date.now()-lastTickRef.current>=9000){
+             setFeed("REAL_MARKET_RECONNECTING");
+             try{ws?.close()}catch{}
+           }
+         },10000);
        };
+
        ws.onmessage=e=>{
          try{
            const m=JSON.parse(e.data);
            if(m.error){setFeed("REAL_MARKET_RECONNECTING");try{ws.close()}catch{};return}
-           if(m.msg_type==="tick"&&m.tick?.symbol===symbol){
+           if(m.msg_type==="tick"&&(m.tick?.symbol===symbol||m.tick?.underlying_symbol===symbol)){
              lastTickRef.current=Date.now();
+             clearTimeout(connectTimeout);
              clearTimeout(tickWatchdogRef.current);
-             tickWatchdogRef.current=setTimeout(()=>{if(Date.now()-lastTickRef.current>=9000){setFeed("REAL_MARKET_RECONNECTING");try{ws?.close()}catch{}}},9000);
+             stopServerFallback();
+             tickWatchdogRef.current=setTimeout(()=>{
+               if(Date.now()-lastTickRef.current>=9000){
+                 setFeed("REAL_MARKET_RECONNECTING");
+                 try{ws?.close()}catch{}
+               }
+             },9000);
              onTick(m.tick);
            }
          }catch{}
        };
+
        ws.onerror=()=>setFeed("REAL_MARKET_RECONNECTING");
        ws.onclose=()=>{
          clearTimeout(refreshTimer);
          clearTimeout(tickWatchdogRef.current);
+         clearTimeout(connectTimeout);
          if(!dead){
-           setFeed("REAL_MARKET_RECONNECTING");
+           pollServerMarket();
            clearTimeout(retryTimer);
            const attempt=Math.min(realRetryAttemptRef.current++,5);
            const delay=Math.min(30000,1500*Math.pow(2,attempt));
@@ -177,25 +231,30 @@ export default function RealMT5Terminal(){
      }catch(e){
        if(dead)return;
        setFeed("REAL_MARKET_RECONNECTING");
+       pollServerMarket();
        clearTimeout(retryTimer);
        const attempt=Math.min(realRetryAttemptRef.current++,5);
        const delay=Math.min(30000,2000*Math.pow(2,attempt));
        retryTimer=setTimeout(connect,delay);
      }
    };
+
    const wake=()=>{
      if(dead||document.hidden)return;
      clearTimeout(retryTimer);
      try{ws?.close()}catch{}
      connect();
    };
+
    connect();
    document.addEventListener("visibilitychange",wake);
    window.addEventListener("focus",wake);
    return()=>{
      dead=true;
+     stopServerFallback();
      clearTimeout(retryTimer);
      clearTimeout(refreshTimer);
+     clearTimeout(connectTimeout);
      clearTimeout(tickWatchdogRef.current);
      document.removeEventListener("visibilitychange",wake);
      window.removeEventListener("focus",wake);
