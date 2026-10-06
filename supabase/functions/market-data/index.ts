@@ -270,7 +270,7 @@ Deno.serve(async req => {
     if (op === "tick") {
       const symbol = String(body.symbol || "").trim();
       if (!symbol || symbol.length > 64) return json({ ok: false, error: "MARKET_SYMBOL_REQUIRED" }, 400);
-      const response = await publicWsCall({ ticks: symbol, subscribe: 0, req_id: 62002 }, "tick");
+      const response = await publicWsCall({ ticks: symbol, subscribe: 1, req_id: 62002 }, "tick");
       const tick = response?.tick;
       const quote = Number(tick?.quote);
       const epoch = Number(tick?.epoch);
