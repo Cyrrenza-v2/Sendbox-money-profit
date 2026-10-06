@@ -16,7 +16,25 @@ const DERIV_PUBLIC_HISTORY_ENDPOINTS = [
 ];
 const fmt=(n,d=5)=>Number.isFinite(Number(n))?Number(n).toLocaleString("en-US",{maximumFractionDigits:d}):"—";
 async function invoke(name, body){
-  const {data,error}=await supabase.functions.invoke(name,{body});
+  // Always resolve the current Supabase session before calling protected Edge Functions.
+  // This avoids stale/missing Authorization headers after mobile wake, tab suspension,
+  // or an expired access token while keeping market-data JWT protection enabled.
+  let { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  let session = sessionData?.session || null;
+  if (sessionError) throw new Error("AUTH_SESSION_LOOKUP_FAILED");
+  if (!session) throw new Error("AUTH_SESSION_REQUIRED");
+
+  const expiresAtMs = Number(session.expires_at || 0) * 1000;
+  if (expiresAtMs && expiresAtMs < Date.now() + 60000) {
+    const refreshed = await supabase.auth.refreshSession();
+    if (refreshed.error || !refreshed.data?.session) throw new Error("AUTH_SESSION_REFRESH_FAILED");
+    session = refreshed.data.session;
+  }
+
+  const { data, error } = await supabase.functions.invoke(name, {
+    body,
+    headers: { Authorization: `Bearer ${session.access_token}` }
+  });
   if(error) throw new Error(data?.error||error.message||"REQUEST_FAILED");
   if(!data?.ok) throw new Error(data?.error||"REQUEST_FAILED");
   return data.data;
