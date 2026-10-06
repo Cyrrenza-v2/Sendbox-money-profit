@@ -112,14 +112,35 @@ export default function RealMT5Terminal(){
  useEffect(()=>{
    let dead=false,retryTimer=null,ws=null,endpointIndex=0;
    setCandles([]);setFeed("LOADING_HISTORY");
+   const loadServerHistory = async () => {
+     if (dead) return;
+     try {
+       const { data, error: invokeError } = await supabase.functions.invoke("market-data", {
+         body: { operation: "history", symbol, granularity: tf }
+       });
+       const raw = data?.ok && !invokeError ? (data.data?.candles || []) : [];
+       if (raw.length) {
+         setCandles(raw.map(c => ({
+           time: Number(c.epoch), open: Number(c.open), high: Number(c.high),
+           low: Number(c.low), close: Number(c.close)
+         })).filter(c => [c.time,c.open,c.high,c.low,c.close].every(Number.isFinite))
+           .sort((a,b) => a.time-b.time).slice(-180));
+         setFeed(current => current === "LOADING_HISTORY" || current === "HISTORY_RECONNECTING" ? "WAITING_FOR_TICK" : current);
+       }
+     } catch {}
+   };
+
    const loadHistory=()=>{
      if(dead)return;
      try{ws=new WebSocket(DERIV_PUBLIC_HISTORY_ENDPOINTS[endpointIndex]);historySocketRef.current=ws}
      catch{endpointIndex=(endpointIndex+1)%DERIV_PUBLIC_HISTORY_ENDPOINTS.length;setFeed("HISTORY_RECONNECTING");retryTimer=setTimeout(loadHistory,2000);return}
-     const timeout=setTimeout(()=>{try{ws.close()}catch{}},12000);
+     const timeout=setTimeout(()=>{
+       try{ws.close()}catch{}
+       loadServerHistory();
+     },8000);
      ws.onopen=()=>{setFeed(current=>current==="LIVE"?"LIVE":"WAITING_FOR_TICK");ws.send(JSON.stringify({ticks_history:symbol,adjust_start_time:1,count:180,end:"latest",style:"candles",granularity:tf,req_id:7001}))};
-     ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.error){setFeed("HISTORY_RECONNECTING");return}if(m.msg_type==="history"||m.msg_type==="candles"){const raw=m.candles||m.history?.candles||[];if(raw.length){setCandles(raw.map(c=>({time:Number(c.epoch),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)})).filter(c=>[c.time,c.open,c.high,c.low,c.close].every(Number.isFinite)).sort((a,b)=>a.time-b.time).slice(-180));setFeed(current=>current==="LOADING_HISTORY"||current==="HISTORY_RECONNECTING"?"WAITING_FOR_TICK":current)}}}catch{}};
-     ws.onerror=()=>setFeed("HISTORY_RECONNECTING");
+     ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.error){setFeed("HISTORY_RECONNECTING");loadServerHistory();return}if(m.msg_type==="history"||m.msg_type==="candles"){const raw=m.candles||m.history?.candles||[];if(raw.length){setCandles(raw.map(c=>({time:Number(c.epoch),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)})).filter(c=>[c.time,c.open,c.high,c.low,c.close].every(Number.isFinite)).sort((a,b)=>a.time-b.time).slice(-180));setFeed(current=>current==="LOADING_HISTORY"||current==="HISTORY_RECONNECTING"?"WAITING_FOR_TICK":current)}}}catch{}};
+     ws.onerror=()=>{setFeed("HISTORY_RECONNECTING");loadServerHistory();};
      ws.onclose=()=>{clearTimeout(timeout);if(!dead){endpointIndex=(endpointIndex+1)%DERIV_PUBLIC_HISTORY_ENDPOINTS.length;setFeed("HISTORY_RECONNECTING");retryTimer=setTimeout(loadHistory,2000)}};
    };
    loadHistory();
@@ -206,9 +227,12 @@ export default function RealMT5Terminal(){
        ws.onclose=()=>{
          clearTimeout(connectTimeout);
          if(!dead){
-           stopServerFallback();
+           // Keep the server relay alive while the browser socket reconnects.
+           // Previously this cleanup stopped the fallback immediately after the
+           // timeout handler started it, leaving the terminal permanently tickless.
            endpointIndex=(endpointIndex+1)%DERIV_PUBLIC_HISTORY_ENDPOINTS.length;
            setFeed("PUBLIC_MARKET_RECONNECTING");
+           if (!serverFallbackActive) pollServerMarket();
            retryTimer=setTimeout(connect,1000);
          }
        };
