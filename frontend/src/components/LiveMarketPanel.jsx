@@ -232,9 +232,15 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
       if (disposed || socket?.readyState !== WebSocket.OPEN || !Array.isArray(list) || !list.length) return;
       const symbols = Array.from(new Set(list.map(item => String(item?.symbol || "").trim()).filter(Boolean)));
       if (!symbols.length) return;
+
+      // Deriv accepts an array for ticks, but subscribing one symbol at a time is
+      // more reliable across the legacy/public WebSocket gateways and makes each
+      // subscription independently recoverable.
       try {
         socket.send(JSON.stringify({ forget_all: "ticks", req_id: nextReqId() }));
-        socket.send(JSON.stringify({ ticks: symbols, subscribe: 1, req_id: nextReqId() }));
+        symbols.forEach(symbol => {
+          socket.send(JSON.stringify({ ticks: symbol, subscribe: 1, req_id: nextReqId() }));
+        });
         activeSubscription = "__ALL__";
       } catch {
         activeSubscription = null;
