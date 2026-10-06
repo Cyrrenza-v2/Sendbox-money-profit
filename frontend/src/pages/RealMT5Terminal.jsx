@@ -36,7 +36,17 @@ async function invoke(name, body){
     body,
     headers: { Authorization: `Bearer ${session.access_token}` }
   });
-  if(error) throw new Error(data?.error||error.message||"REQUEST_FAILED");
+  if(error){
+    let detail = data?.error || "";
+    try {
+      const response = error?.context;
+      if (!detail && response?.json) {
+        const bodyText = await response.clone().text();
+        try { detail = JSON.parse(bodyText)?.error || JSON.parse(bodyText)?.message || bodyText; } catch {}
+      }
+    } catch {}
+    throw new Error(String(detail || error.message || "REQUEST_FAILED"));
+  }
   if(!data?.ok) throw new Error(data?.error||"REQUEST_FAILED");
   return data.data;
 }
