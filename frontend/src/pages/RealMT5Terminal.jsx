@@ -11,8 +11,9 @@ const TIMEFRAMES = [
   {label:"1h",seconds:3600},{label:"4h",seconds:14400},{label:"1d",seconds:86400}
 ];
 const DERIV_PUBLIC_HISTORY_ENDPOINTS = [
-  "wss://ws.derivws.com/websockets/v3?app_id=1089",
-  "wss://ws.binaryws.com/websockets/v3"
+  "wss://api.derivws.com/trading/v1/options/ws/public",
+  "wss://ws.binaryws.com/websockets/v3",
+  "wss://ws.derivws.com/websockets/v3?app_id=1089"
 ];
 const fmt=(n,d=5)=>Number.isFinite(Number(n))?Number(n).toLocaleString("en-US",{maximumFractionDigits:d}):"—";
 async function invoke(name, body){
