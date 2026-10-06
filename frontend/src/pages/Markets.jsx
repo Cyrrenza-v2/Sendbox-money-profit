@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import LiveMarketPanel from "../components/LiveMarketPanel";
 
 export default function Markets() {
   const [open, setOpen] = useState(false);
+ const navigate = useNavigate();
 
   return (
     <div className="app-layout">
@@ -25,7 +27,7 @@ export default function Markets() {
           </div>
           <LiveMarketPanel
             onOpenTerminal={(symbol) => {
-              window.location.assign(`/app/trading/terminal?symbol=${encodeURIComponent(symbol)}`);
+              navigate(`/app/trading/real-terminal?symbol=${encodeURIComponent(symbol)}`);
             }}
           />
         </section>
