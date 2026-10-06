@@ -108,9 +108,8 @@ export default function RealMT5Terminal(){
  useEffect(()=>{
    let dead=false,retryTimer=null,ws=null,endpointIndex=0;
    const historyEndpoints=[
-     "wss://ws.binaryws.com/websockets/v3?app_id=1089",
-     "wss://api.derivws.com/trading/v1/options/ws/public",
-     "wss://ws.derivws.com/websockets/v3?app_id=1089"
+     "wss://ws.derivws.com/websockets/v3?app_id=1089",
+     "wss://ws.binaryws.com/websockets/v3"
    ];
    setCandles([]);setFeed("LOADING_HISTORY");
    const loadHistory=()=>{
@@ -129,9 +128,9 @@ export default function RealMT5Terminal(){
 
 
  useEffect(()=>{
-   let dead=false,ws=null,retryTimer=null,refreshTimer=null,serverTimer=null,connectTimeout=null;
+   let dead=false,ws=null,retryTimer=null,serverTimer=null,connectTimeout=null;
    let serverFallbackActive=false;
-   const accountId=String(account?.balance?.loginid||account?.loginid||account?.account_id||"").trim();
+   let endpointIndex=0;
 
    const pollServerMarket=()=>{
      if(dead||serverFallbackActive)return;
@@ -149,7 +148,7 @@ export default function RealMT5Terminal(){
            onTick({quote:q,epoch,pip_size:t?.pipSize??null});
          }
        }catch{}
-       if(!dead&&serverFallbackActive)serverTimer=setTimeout(poll,2500);
+       if(!dead&&serverFallbackActive)serverTimer=setTimeout(poll,1000);
      };
      poll();
    };
@@ -160,107 +159,81 @@ export default function RealMT5Terminal(){
      serverTimer=null;
    };
 
-   const connect=async()=>{
+   const connect=()=>{
      if(dead)return;
-     stopServerFallback();
      clearTimeout(connectTimeout);
      try{
-       setFeed("CONNECTING_REAL_MARKET");
-       const session=await invoke("deriv-real-session",{account_id:accountId||undefined});
-       const url=session?.websocket?.url;
-       if(!url)throw new Error("REAL_MARKET_SESSION_UNAVAILABLE");
-       ws=new WebSocket(url);
-
+       setFeed("CONNECTING_PUBLIC_MARKET");
+       ws=new WebSocket(historyEndpoints[endpointIndex]);
+       historySocketRef.current=ws;
        connectTimeout=setTimeout(()=>{
          if(!dead&&Date.now()-lastTickRef.current>7000){
            try{ws?.close()}catch{}
            pollServerMarket();
          }
        },8000);
-
        ws.onopen=()=>{
          if(dead){try{ws.close()}catch{};return}
-         realRetryAttemptRef.current=0;
-         setFeed("AUTHENTICATED_REAL_STREAM");
+         setFeed("LIVE_PUBLIC_MARKET");
          lastTickRef.current=Date.now();
+         ws.send(JSON.stringify({ticks_history:symbol,adjust_start_time:1,count:180,end:"latest",style:"candles",granularity:tf,req_id:7001}));
          ws.send(JSON.stringify({ticks:symbol,subscribe:1,req_id:91001}));
-         clearTimeout(refreshTimer);
-         clearTimeout(tickWatchdogRef.current);
-         refreshTimer=setTimeout(()=>{try{ws.close()}catch{}},90000);
-         tickWatchdogRef.current=setTimeout(()=>{
-           if(Date.now()-lastTickRef.current>=9000){
-             setFeed("REAL_MARKET_RECONNECTING");
-             try{ws?.close()}catch{}
-           }
-         },10000);
+         clearTimeout(connectTimeout);
        };
-
        ws.onmessage=e=>{
          try{
-           const m=JSON.parse(e.data);
-           if(m.error){setFeed("REAL_MARKET_RECONNECTING");try{ws.close()}catch{};return}
-           if(m.msg_type==="tick"&&(m.tick?.symbol===symbol||m.tick?.underlying_symbol===symbol)){
+           const msg=JSON.parse(e.data);
+           if(msg.error){try{ws.close()}catch{};return}
+           if(msg.msg_type==="history"||msg.msg_type==="candles"){
+             const raw=msg.candles||msg.history?.candles||[];
+             if(raw.length){
+               setCandles(raw.map(c=>({time:Number(c.epoch),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)}))
+                 .filter(c=>[c.time,c.open,c.high,c.low,c.close].every(Number.isFinite))
+                 .sort((a,b)=>a.time-b.time).slice(-180));
+             }
+           }
+           if(msg.msg_type==="tick"&&(msg.tick?.symbol===symbol||msg.tick?.underlying_symbol===symbol)){
              lastTickRef.current=Date.now();
              clearTimeout(connectTimeout);
-             clearTimeout(tickWatchdogRef.current);
              stopServerFallback();
-             tickWatchdogRef.current=setTimeout(()=>{
-               if(Date.now()-lastTickRef.current>=9000){
-                 setFeed("REAL_MARKET_RECONNECTING");
-                 try{ws?.close()}catch{}
-               }
-             },9000);
-             onTick(m.tick);
+             setFeed("LIVE_PUBLIC_MARKET");
+             setError("");
+             onTick(msg.tick);
            }
          }catch{}
        };
-
-       ws.onerror=()=>setFeed("REAL_MARKET_RECONNECTING");
+       ws.onerror=()=>setFeed("PUBLIC_MARKET_RECONNECTING");
        ws.onclose=()=>{
-         clearTimeout(refreshTimer);
-         clearTimeout(tickWatchdogRef.current);
          clearTimeout(connectTimeout);
          if(!dead){
-           pollServerMarket();
-           clearTimeout(retryTimer);
-           const attempt=Math.min(realRetryAttemptRef.current++,5);
-           const delay=Math.min(30000,1500*Math.pow(2,attempt));
-           retryTimer=setTimeout(connect,delay);
+           stopServerFallback();
+           endpointIndex=(endpointIndex+1)%historyEndpoints.length;
+           setFeed("PUBLIC_MARKET_RECONNECTING");
+           retryTimer=setTimeout(connect,1000);
          }
        };
-     }catch(e){
-       if(dead)return;
-       setFeed("REAL_MARKET_RECONNECTING");
-       pollServerMarket();
-       clearTimeout(retryTimer);
-       const attempt=Math.min(realRetryAttemptRef.current++,5);
-       const delay=Math.min(30000,2000*Math.pow(2,attempt));
-       retryTimer=setTimeout(connect,delay);
+     }catch{
+       endpointIndex=(endpointIndex+1)%historyEndpoints.length;
+       setFeed("PUBLIC_MARKET_RECONNECTING");
+       retryTimer=setTimeout(connect,1000);
      }
    };
 
-   const wake=()=>{
-     if(dead||document.hidden)return;
-     clearTimeout(retryTimer);
-     try{ws?.close()}catch{}
-     connect();
-   };
-
+   setCandles([]);
+   setTicks([]);
+   setPrice(null);
+   setFeed("CONNECTING_PUBLIC_MARKET");
    connect();
-   document.addEventListener("visibilitychange",wake);
-   window.addEventListener("focus",wake);
+
    return()=>{
      dead=true;
-     stopServerFallback();
      clearTimeout(retryTimer);
-     clearTimeout(refreshTimer);
      clearTimeout(connectTimeout);
-     clearTimeout(tickWatchdogRef.current);
-     document.removeEventListener("visibilitychange",wake);
-     window.removeEventListener("focus",wake);
+     stopServerFallback();
      try{ws?.close()}catch{}
+     historySocketRef.current=null;
    };
- },[symbol,account?.balance?.loginid,account?.loginid,account?.account_id]);
+ },[symbol,tf]);
 
  const onTick=t=>{
    const q=Number(t?.quote),epoch=Number(t?.epoch);
