@@ -1,4 +1,5 @@
 name: CI
+# Server-side Deriv verification is authoritative; GitHub runner never opens Deriv WebSockets directly.
 
 on:
   push:
