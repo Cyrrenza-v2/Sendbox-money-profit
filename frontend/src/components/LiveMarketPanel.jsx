@@ -86,9 +86,8 @@ function classifyDerivMarket(item) {
 }
 
 const DERIV_PUBLIC_ENDPOINTS = [
-  "wss:" + "//ws.binaryws.com/websockets/v3",
-  "wss:" + "//api.derivws.com/trading/v1/options/ws/public",
-  "wss:" + "//ws.derivws.com/websockets/v3?app_id=1089"
+  "wss://ws.derivws.com/websockets/v3?app_id=1089",
+  "wss://ws.binaryws.com/websockets/v3"
 ];
 const DERIV_DISCOVERY_TIMEOUT_MS = 20000;
 const DERIV_RETRY_BASE_MS = 2000;
@@ -194,7 +193,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             }
           } catch {}
         }
-        if (!disposed && serverFallbackActive) serverPollTimer = setTimeout(poll, 2500);
+        if (!disposed && serverFallbackActive) serverPollTimer = setTimeout(poll, 1000);
       };
       poll();
     };
@@ -218,14 +217,28 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
 
     const subscribeSymbol = symbol => {
       if (!symbol || disposed || socket?.readyState !== WebSocket.OPEN) return;
-      if (activeSubscription === symbol) return;
+      if (activeSubscription === symbol || activeSubscription === "__ALL__") return;
       activeSubscription = symbol;
-      try { socket.send(JSON.stringify({ forget_all: "ticks", req_id: nextReqId() })); } catch {}
       try {
+        socket.send(JSON.stringify({ forget_all: "ticks", req_id: nextReqId() }));
         socket.send(JSON.stringify({ ticks: symbol, subscribe: 1, req_id: nextReqId() }));
       } catch {
         activeSubscription = null;
         setError("Unable to subscribe to the selected Deriv market price stream.");
+      }
+    };
+
+    const subscribeAllMarkets = list => {
+      if (disposed || socket?.readyState !== WebSocket.OPEN || !Array.isArray(list) || !list.length) return;
+      const symbols = Array.from(new Set(list.map(item => String(item?.symbol || "").trim()).filter(Boolean)));
+      if (!symbols.length) return;
+      try {
+        socket.send(JSON.stringify({ forget_all: "ticks", req_id: nextReqId() }));
+        socket.send(JSON.stringify({ ticks: symbols, subscribe: 1, req_id: nextReqId() }));
+        activeSubscription = "__ALL__";
+      } catch {
+        activeSubscription = null;
+        setError("Unable to start the Deriv live market stream.");
       }
     };
 
@@ -361,7 +374,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
                 .catch(syncError => console.warn("Supabase market catalog sync failed:", syncError?.message || syncError));
             }
 
-            subscribeSymbol(selectedSymbolRef.current || focusedSymbol || unique[0]?.symbol);
+            subscribeAllMarkets(unique);
             return;
           }
 
