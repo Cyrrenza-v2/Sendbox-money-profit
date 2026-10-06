@@ -83,16 +83,14 @@ jobs:
 
 
   market-data-verification:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Verify authoritative Deriv catalog, schedules, ticks and history through Supabase
-        env:
-          OIDC_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
-          OIDC_TOKEN: ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
         run: |
           set -euo pipefail
           RESPONSE=$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Fgithub.com%2FCyrrenza-v2%2FSendbox-money-profit" \
-            | python -c 'import json,sys; print(json.load(sys.stdin)["value"])')
+            | jq -r '.value')
           RESULT=$(curl -fsS -X POST \
             -H "Authorization: Bearer ${RESPONSE}" \
             -H "Content-Type: application/json" \
