@@ -92,8 +92,8 @@ jobs:
         run: npm install --no-save ws@8
       - name: Verify authoritative Deriv catalog, schedules, ticks and history
         run: |
-          node <<'NODE'
-          const { WebSocket } = require('ws');
+          node --input-type=module <<'NODE'
+          import { WebSocket } from 'ws';
           const endpoints = [
             'wss://ws.derivws.com/websockets/v3?app_id=1089',
             'wss://ws.binaryws.com/websockets/v3'
