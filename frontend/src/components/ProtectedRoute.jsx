@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 
-const ADMIN_ROLES = ["admin", "risk_admin", "finance_admin", "support"];
+const OWNER_EMAIL = "uasianubong@gmail.com";
 
 export default function ProtectedRoute() {
   const [state, setState] = useState("loading");
@@ -18,18 +18,8 @@ export default function ProtectedRoute() {
           return;
         }
 
-        const { data: roles, error } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", session.user.id);
-
-        if (error) throw error;
-
-        const authorized = (roles || []).some((row) =>
-          ADMIN_ROLES.includes(String(row.role).toLowerCase())
-        );
-
-        if (!authorized) {
+        const ownerEmail = String(session.user.email || "").trim().toLowerCase();
+        if (ownerEmail !== OWNER_EMAIL) {
           await supabase.auth.signOut();
           if (live) setState("denied");
           return;
@@ -47,7 +37,7 @@ export default function ProtectedRoute() {
   }, []);
 
   if (state === "loading") {
-    return <div className="secure-screen"><b>VELTRION</b><span>SECURING PRIVATE ADMIN SESSION…</span></div>;
+    return <div className="secure-screen"><b>VELTRION</b><span>SECURING PRIVATE OWNER SESSION…</span></div>;
   }
 
   if (state === "error") {
