@@ -237,6 +237,29 @@ Deno.serve(async req => {
       return json({ ok: true, data: { markets: mergedMarkets, count: mergedMarkets.length, activeSymbolCount: markets.length, tradingTimesCount: Math.max(0, mergedMarkets.length - markets.length), tradingTimesSymbolCount: scheduleSymbols.size, scheduleOnlySymbolCount: scheduleOnlySymbols.length, scheduleOnlySymbols: scheduleOnlySymbols.slice(0,200), source: "server_deriv_public_websocket+trading_times", tradingTimesError, observed_at: updatedAt } });
     }
 
+    if (op === "history") {
+      const symbol = String(body.symbol || "").trim();
+      const granularity = Number(body.granularity || 300);
+      const allowedGranularities = new Set([60,120,180,300,600,900,1800,3600,7200,14400,28800,86400]);
+      if (!symbol || symbol.length > 64) return json({ ok: false, error: "MARKET_SYMBOL_REQUIRED" }, 400);
+      if (!allowedGranularities.has(granularity)) return json({ ok: false, error: "INVALID_GRANULARITY" }, 400);
+      const response = await publicWsCall({
+        ticks_history: symbol,
+        adjust_start_time: 1,
+        count: 180,
+        end: "latest",
+        style: "candles",
+        granularity,
+        req_id: 62005
+      }, "history", 8000);
+      return json({ ok: true, data: {
+        symbol,
+        candles: Array.isArray(response?.candles) ? response.candles : [],
+        source: "server_deriv_public_websocket",
+        observed_at: new Date().toISOString()
+      }});
+    }
+
     if (op === "time") {
       const response = await publicWsCall({ time: 1, req_id: 62004 }, "time", 4000);
       const serverEpoch = Number(response?.time);
