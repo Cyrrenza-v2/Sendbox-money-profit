@@ -5,7 +5,7 @@ export default function MarketDetails(){
  const [params]=useSearchParams();
  const symbol=useMemo(()=>params.get("symbol")||"frxEURUSD",[params]);
  const label=symbol==="frxEURUSD"?"EUR/USD":symbol.replace(/^frx/,"");
- const terminalPath=`/app/trading/terminal?symbol=${encodeURIComponent(symbol)}`;
+ const terminalPath=`/app/trading/real-terminal?symbol=${encodeURIComponent(symbol)}`;
  return <div className="vel-page market-details-page">
   <div className="vel-page-heading">
    <div>
