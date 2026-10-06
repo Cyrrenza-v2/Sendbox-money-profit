@@ -12,7 +12,7 @@ export default function MarketDetails(){
    <div>
     <div className="vel-eyebrow">MARKET / SELECTED SYMBOL</div>
     <h1>{label}</h1>
-    <p>Select the trading experience after selecting the market. The web terminal is the sandbox trading workspace; real-money execution remains a separate, server-gated surface.</p>
+    <p>Select the trading experience after selecting the market. The web terminal is the live VELTRION terminal; real-money execution remains separately server-gated.</p>
    </div>
    <span className="vel-data-source">DERIV PUBLIC MARKET DATA</span>
   </div>
@@ -24,7 +24,7 @@ export default function MarketDetails(){
    <section className="vel-panel market-choice-card">
     <div className="market-choice-top"><span className="market-choice-icon">WEB</span><span className="market-choice-status">AVAILABLE</span></div>
     <h2>Web Terminal</h2>
-    <p>Open the verified market chart, live quote, AI review and VELTRION sandbox trading workflow for this symbol.</p>
+    <p>Open the verified live market chart, continuous quote stream and VELTRION terminal for this symbol.</p>
     <button type="button" className="vel-button market-terminal-link" onClick={()=>navigate(terminalPath)}>Open Web Terminal <span>→</span></button>
    </section>
    <section className="vel-panel market-choice-card">
