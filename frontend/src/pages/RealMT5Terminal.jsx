@@ -55,7 +55,7 @@ export default function RealMT5Terminal(){
  const initialSymbol=params.get("symbol")||(()=>{try{return localStorage.getItem("veltrion.realTerminal.symbol")||"1HZ100V"}catch{return "1HZ100V"}})();
  const [side,setSide]=useState(false),[symbol,setSymbol]=useState(initialSymbol),[price,setPrice]=useState(null),[feed,setFeed]=useState("CONNECTING");
  const [candles,setCandles]=useState([]),[ticks,setTicks]=useState([]),[tf,setTf]=useState(300),[account,setAccount]=useState(null),[portfolio,setPortfolio]=useState([]),[history,setHistory]=useState([]),[statements,setStatements]=useState([]);
- const historySocketRef=useRef(null),refreshBusy=useRef(false),retryRef=useRef(null),realRetryRef=useRef(null),realRetryAttemptRef=useRef(0),lastTickRef=useRef(0),tickWatchdogRef=useRef(null),tfRef=useRef(300);
+ const historySocketRef=useRef(null),refreshBusy=useRef(false),retryRef=useRef(null),realRetryRef=useRef(null),realRetryAttemptRef=useRef(0),lastTickRef=useRef(0),tfRef=useRef(300);
  const lastGoodSnapshotRef=useRef(null),refreshDelayRef=useRef(15000);
  const symbolRef=useRef(initialSymbol);
  const marketDataKeyRef=useRef(`${initialSymbol}:300`);
@@ -286,6 +286,10 @@ export default function RealMT5Terminal(){
      setPrice(null);
    }
    setFeed("CONNECTING_PUBLIC_MARKET");
+   // Prime historical OHLC immediately. The browser WebSocket remains responsible for live ticks,
+   // while the authenticated server relay guarantees candles are available even when browser WS
+   // transport is blocked or temporarily reconnecting.
+   loadServerHistory();
    connect();
 
    return()=>{
@@ -305,7 +309,12 @@ export default function RealMT5Terminal(){
    setPrice(q);setFeed("LIVE");setTicks(a=>[{quote:q,epoch},...a].slice(0,40));
    const activeTf=tfRef.current;
    const bucket=Math.floor(epoch/activeTf)*activeTf;
-   setCandles(a=>{const last=a[a.length-1];if(!last||last.time!==bucket)return [...a,{time:bucket,open:q,high:q,low:q,close:q}].slice(-180);return [...a.slice(0,-1),{...last,high:Math.max(last.high,q),low:Math.min(last.low,q),close:q}]});
+   setCandles(a=>{
+     const last=a[a.length-1];
+     if(!last||last.time<bucket)return [...a,{time:bucket,open:q,high:q,low:q,close:q}].slice(-180);
+     if(last.time>bucket)return a;
+     return [...a.slice(0,-1),{...last,high:Math.max(last.high,q),low:Math.min(last.low,q),close:q}];
+   });
  };
 
  const balance=Number(account?.balance?.balance ?? account?.balance ?? 0);
