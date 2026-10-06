@@ -32,7 +32,7 @@ export default function RealMT5Terminal(){
  const initialSymbol=params.get("symbol")||"1HZ100V";
  const [side,setSide]=useState(false),[symbol,setSymbol]=useState(initialSymbol),[price,setPrice]=useState(null),[feed,setFeed]=useState("CONNECTING");
  const [candles,setCandles]=useState([]),[ticks,setTicks]=useState([]),[tf,setTf]=useState(300),[account,setAccount]=useState(null),[portfolio,setPortfolio]=useState([]),[history,setHistory]=useState([]),[statements,setStatements]=useState([]);
- const historySocketRef=useRef(null),refreshBusy=useRef(false),retryRef=useRef(null),lastTickRef=useRef(0),tickWatchdogRef=useRef(null),tfRef=useRef(300);
+ const historySocketRef=useRef(null),refreshBusy=useRef(false),retryRef=useRef(null),realRetryRef=useRef(null),realRetryAttemptRef=useRef(0),lastTickRef=useRef(0),tickWatchdogRef=useRef(null),tfRef=useRef(300);
  const lastGoodSnapshotRef=useRef(null),refreshDelayRef=useRef(15000);
  useEffect(()=>{tfRef.current=tf},[tf]);
  const [error,setError]=useState(""),[lastSync,setLastSync]=useState(null),[syncStatus,setSyncStatus]=useState("PENDING"),[syncOpen,setSyncOpen]=useState(0),[syncClosed,setSyncClosed]=useState(0);
@@ -130,16 +130,18 @@ export default function RealMT5Terminal(){
 
  useEffect(()=>{
    let dead=false,ws=null,retryTimer=null,refreshTimer=null;
+   const accountId=String(account?.balance?.loginid||account?.loginid||account?.account_id||"").trim();
    const connect=async()=>{
      if(dead)return;
      try{
        setFeed("CONNECTING_REAL_MARKET");
-       const session=await invoke("deriv-real-session",{account_id:account?.account?.account_id||undefined});
+       const session=await invoke("deriv-real-session",{account_id:accountId||undefined});
        const url=session?.websocket?.url;
        if(!url)throw new Error("REAL_MARKET_SESSION_UNAVAILABLE");
        ws=new WebSocket(url);
        ws.onopen=()=>{
          if(dead){try{ws.close()}catch{};return}
+         realRetryAttemptRef.current=0;
          setFeed("LIVE_REAL_MARKET");
          lastTickRef.current=Date.now();
          ws.send(JSON.stringify({ticks:symbol,subscribe:1,req_id:91001}));
@@ -151,7 +153,7 @@ export default function RealMT5Terminal(){
        ws.onmessage=e=>{
          try{
            const m=JSON.parse(e.data);
-           if(m.error){setFeed("REAL_MARKET_RECONNECTING");return}
+           if(m.error){setFeed("REAL_MARKET_RECONNECTING");try{ws.close()}catch{};return}
            if(m.msg_type==="tick"&&m.tick?.symbol===symbol){
              lastTickRef.current=Date.now();
              clearTimeout(tickWatchdogRef.current);
@@ -167,25 +169,39 @@ export default function RealMT5Terminal(){
          if(!dead){
            setFeed("REAL_MARKET_RECONNECTING");
            clearTimeout(retryTimer);
-           retryTimer=setTimeout(connect,1500);
+           const attempt=Math.min(realRetryAttemptRef.current++,5);
+           const delay=Math.min(30000,1500*Math.pow(2,attempt));
+           retryTimer=setTimeout(connect,delay);
          }
        };
      }catch(e){
        if(dead)return;
        setFeed("REAL_MARKET_RECONNECTING");
        clearTimeout(retryTimer);
-       retryTimer=setTimeout(connect,2000);
+       const attempt=Math.min(realRetryAttemptRef.current++,5);
+       const delay=Math.min(30000,2000*Math.pow(2,attempt));
+       retryTimer=setTimeout(connect,delay);
      }
    };
+   const wake=()=>{
+     if(dead||document.hidden)return;
+     clearTimeout(retryTimer);
+     try{ws?.close()}catch{}
+     connect();
+   };
    connect();
+   document.addEventListener("visibilitychange",wake);
+   window.addEventListener("focus",wake);
    return()=>{
      dead=true;
      clearTimeout(retryTimer);
      clearTimeout(refreshTimer);
      clearTimeout(tickWatchdogRef.current);
+     document.removeEventListener("visibilitychange",wake);
+     window.removeEventListener("focus",wake);
      try{ws?.close()}catch{}
    };
- },[symbol,account?.account?.account_id]);
+ },[symbol,account?.balance?.loginid,account?.loginid,account?.account_id]);
 
  const onTick=t=>{
    const q=Number(t?.quote),epoch=Number(t?.epoch);
