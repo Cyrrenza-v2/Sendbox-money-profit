@@ -92,6 +92,26 @@ const DERIV_PUBLIC_ENDPOINTS = [
 const DERIV_DISCOVERY_TIMEOUT_MS = 20000;
 const DERIV_RETRY_BASE_MS = 2000;
 
+async function invokeAuthenticatedMarketData(body) {
+  let { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  let session = sessionData?.session || null;
+  if (sessionError) throw new Error("AUTH_SESSION_LOOKUP_FAILED");
+  if (!session) throw new Error("AUTH_SESSION_REQUIRED");
+  const expiresAtMs = Number(session.expires_at || 0) * 1000;
+  if (expiresAtMs && expiresAtMs < Date.now() + 60000) {
+    const refreshed = await supabase.auth.refreshSession();
+    if (refreshed.error || !refreshed.data?.session) throw new Error("AUTH_SESSION_REFRESH_FAILED");
+    session = refreshed.data.session;
+  }
+  const { data, error } = await supabase.functions.invoke("market-data", {
+    body,
+    headers: { Authorization: `Bearer ${session.access_token}` }
+  });
+  if (error) throw new Error(data?.error || error.message || "MARKET_DATA_REQUEST_FAILED");
+  if (!data?.ok) throw new Error(data?.error || "MARKET_DATA_REQUEST_FAILED");
+  return data.data;
+}
+
 export default function LiveMarketPanel({ compact = false, selectedSymbol = null, onSymbolChange, onPriceChange, onOpenTerminal }) {
   const [markets, setMarkets] = useState([]);
   const [ticks, setTicks] = useState({});
@@ -178,13 +198,10 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
         const marketSymbol = selectedSymbolRef.current || focusedSymbolRef.current;
         if (marketSymbol) {
           try {
-            const { data, error: invokeError } = await supabase.functions.invoke("market-data", {
-              body: { operation: "tick", symbol: marketSymbol }
-            });
-            const tick = data?.ok ? data.data : null;
+            const tick = await invokeAuthenticatedMarketData({ operation: "tick", symbol: marketSymbol });
             const quote = Number(tick?.quote);
             const epoch = Number(tick?.epoch);
-            if (!invokeError && Number.isFinite(quote) && Number.isFinite(epoch)) {
+            if (Number.isFinite(quote) && Number.isFinite(epoch)) {
               const nextTick = { quote, epoch, pipSize: tick?.pipSize ?? null };
               setTicks(prev => ({ ...prev, [marketSymbol]: nextTick }));
               setConnected(true);
@@ -200,11 +217,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
 
     const loadServerCatalog = async () => {
       try {
-        const { data, error: invokeError } = await supabase.functions.invoke("market-data", {
-          body: { operation: "catalog" }
-        });
-        if (invokeError) throw invokeError;
-        const payload = data?.ok ? data.data : null;
+        const payload = await invokeAuthenticatedMarketData({ operation: "catalog" });
         const unique = applyServerMarkets(payload?.markets);
         setFeedMode("SERVER");
         setError("");
