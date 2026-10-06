@@ -5,6 +5,7 @@ name: Deploy VELTRION to GitHub Pages
 # Manual deployment trigger: 2026-10-03 — user requested deploy and verify.
 # GitHub Pages deployment verification trigger: 2026-10-03.
 # Deployment verification: MT5 bridge v30 protected integration.
+# Manual live verification redeploy: 2026-10-06.
 on:
   push:
     branches:
