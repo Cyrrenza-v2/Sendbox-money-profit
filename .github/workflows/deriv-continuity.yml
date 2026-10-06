@@ -1,0 +1,34 @@
+name: Deriv Real Account Continuity
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_refresh:
+        description: "Exercise the Deriv OAuth refresh-token path"
+        required: false
+        default: true
+        type: boolean
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deriv-real-continuity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify authenticated Deriv real-account continuity
+        shell: bash
+        env:
+          FORCE_REFRESH: ${{ github.event_name == 'workflow_dispatch' && inputs.force_refresh || false }}
+        run: |
+          set -euo pipefail
+          RESPONSE=$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Fgithub.com%2FCyrrenza-v2%2FSendbox-money-profit" | jq -r '.value')
+          RESULT=$(curl -sS -X POST -H "Authorization: Bearer ${RESPONSE}" -H "Content-Type: application/json" "https://qalowxnqngzsdlayqivr.supabase.co/functions/v1/deriv-continuity-ci" --data "{\"force_refresh\":${FORCE_REFRESH}}")
+          echo "${RESULT}"
+          python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True, "DERIV REAL CONTINUITY: NOT PASS"; assert all(x.get("reconnect_verified") is True for x in d.get("results",[]) if x.get("ok")), "DERIV RECONNECT: NOT PASS"'
+          echo "DERIV REAL CONTINUITY: PASS"
