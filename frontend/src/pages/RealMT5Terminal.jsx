@@ -10,6 +10,10 @@ const TIMEFRAMES = [
   {label:"1m",seconds:60},{label:"5m",seconds:300},{label:"15m",seconds:900},
   {label:"1h",seconds:3600},{label:"4h",seconds:14400},{label:"1d",seconds:86400}
 ];
+const DERIV_PUBLIC_HISTORY_ENDPOINTS = [
+  "wss://ws.derivws.com/websockets/v3?app_id=1089",
+  "wss://ws.binaryws.com/websockets/v3"
+];
 const fmt=(n,d=5)=>Number.isFinite(Number(n))?Number(n).toLocaleString("en-US",{maximumFractionDigits:d}):"—";
 async function invoke(name, body){
   const {data,error}=await supabase.functions.invoke(name,{body});
@@ -107,20 +111,16 @@ export default function RealMT5Terminal(){
 
  useEffect(()=>{
    let dead=false,retryTimer=null,ws=null,endpointIndex=0;
-   const historyEndpoints=[
-     "wss://ws.derivws.com/websockets/v3?app_id=1089",
-     "wss://ws.binaryws.com/websockets/v3"
-   ];
    setCandles([]);setFeed("LOADING_HISTORY");
    const loadHistory=()=>{
      if(dead)return;
-     try{ws=new WebSocket(historyEndpoints[endpointIndex]);historySocketRef.current=ws}
-     catch{endpointIndex=(endpointIndex+1)%historyEndpoints.length;setFeed("HISTORY_RECONNECTING");retryTimer=setTimeout(loadHistory,2000);return}
+     try{ws=new WebSocket(DERIV_PUBLIC_HISTORY_ENDPOINTS[endpointIndex]);historySocketRef.current=ws}
+     catch{endpointIndex=(endpointIndex+1)%DERIV_PUBLIC_HISTORY_ENDPOINTS.length;setFeed("HISTORY_RECONNECTING");retryTimer=setTimeout(loadHistory,2000);return}
      const timeout=setTimeout(()=>{try{ws.close()}catch{}},12000);
      ws.onopen=()=>{setFeed(current=>current==="LIVE"?"LIVE":"WAITING_FOR_TICK");ws.send(JSON.stringify({ticks_history:symbol,adjust_start_time:1,count:180,end:"latest",style:"candles",granularity:tf,req_id:7001}))};
      ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.error){setFeed("HISTORY_RECONNECTING");return}if(m.msg_type==="history"||m.msg_type==="candles"){const raw=m.candles||m.history?.candles||[];if(raw.length){setCandles(raw.map(c=>({time:Number(c.epoch),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)})).filter(c=>[c.time,c.open,c.high,c.low,c.close].every(Number.isFinite)).sort((a,b)=>a.time-b.time).slice(-180));setFeed(current=>current==="LOADING_HISTORY"||current==="HISTORY_RECONNECTING"?"WAITING_FOR_TICK":current)}}}catch{}};
      ws.onerror=()=>setFeed("HISTORY_RECONNECTING");
-     ws.onclose=()=>{clearTimeout(timeout);if(!dead){endpointIndex=(endpointIndex+1)%historyEndpoints.length;setFeed("HISTORY_RECONNECTING");retryTimer=setTimeout(loadHistory,2000)}};
+     ws.onclose=()=>{clearTimeout(timeout);if(!dead){endpointIndex=(endpointIndex+1)%DERIV_PUBLIC_HISTORY_ENDPOINTS.length;setFeed("HISTORY_RECONNECTING");retryTimer=setTimeout(loadHistory,2000)}};
    };
    loadHistory();
    return()=>{dead=true;clearTimeout(retryTimer);try{ws?.close()}catch{}historySocketRef.current=null};
@@ -164,7 +164,7 @@ export default function RealMT5Terminal(){
      clearTimeout(connectTimeout);
      try{
        setFeed("CONNECTING_PUBLIC_MARKET");
-       ws=new WebSocket(historyEndpoints[endpointIndex]);
+       ws=new WebSocket(DERIV_PUBLIC_HISTORY_ENDPOINTS[endpointIndex]);
        historySocketRef.current=ws;
        connectTimeout=setTimeout(()=>{
          if(!dead&&Date.now()-lastTickRef.current>7000){
@@ -207,13 +207,13 @@ export default function RealMT5Terminal(){
          clearTimeout(connectTimeout);
          if(!dead){
            stopServerFallback();
-           endpointIndex=(endpointIndex+1)%historyEndpoints.length;
+           endpointIndex=(endpointIndex+1)%DERIV_PUBLIC_HISTORY_ENDPOINTS.length;
            setFeed("PUBLIC_MARKET_RECONNECTING");
            retryTimer=setTimeout(connect,1000);
          }
        };
      }catch{
-       endpointIndex=(endpointIndex+1)%historyEndpoints.length;
+       endpointIndex=(endpointIndex+1)%DERIV_PUBLIC_HISTORY_ENDPOINTS.length;
        setFeed("PUBLIC_MARKET_RECONNECTING");
        retryTimer=setTimeout(connect,1000);
      }
