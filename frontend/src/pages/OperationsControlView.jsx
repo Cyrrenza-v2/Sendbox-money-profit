@@ -23,7 +23,7 @@ export default function OperationsControlView(){
     const {data:{user}}=await supabase.auth.getUser();
     if(!user){setMessage("AUTH_REQUIRED");setBusy(false);return;}
     const {data,error}=await supabase.functions.invoke("admin-control",{body:{active}});
-    if(error){setMessage(data?.error||error.message);setBusy(false);return;}
+    if(error){setMessage(data?.error||error.message||"ADMIN_CONTROL_REQUEST_FAILED");setBusy(false);return;}
     setMessage(data?.message|| (active?"GLOBAL EMERGENCY STOP ACTIVE":"GLOBAL EMERGENCY STOP RELEASED")); await load(); setBusy(false);
   }
   const stopped=controls.find(x=>x.control_key==="EMERGENCY_STOP")?.is_active ?? true;
