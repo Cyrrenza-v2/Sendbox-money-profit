@@ -178,7 +178,6 @@ async function getUser(req: Request) {
 Deno.serve(async req => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const user = await getUser(req);
-  if (!user) return json({ ok: false, error: "Authentication required" }, 401);
 
   try {
     const body = req.method === "GET" ? {} : await req.json().catch(() => ({}));
