@@ -8,6 +8,3 @@ verify_jwt = true
 
 [functions.mt5-bridge]
 verify_jwt = true
-
-[functions.market-data]
-verify_jwt = false
