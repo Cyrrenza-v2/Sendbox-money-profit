@@ -51,13 +51,23 @@ function Chart({candles,price,symbol}){
   </svg>;
 }
 export default function RealMT5Terminal(){
- const [params]=useSearchParams();
- const initialSymbol=params.get("symbol")||"1HZ100V";
+ const [params,setParams]=useSearchParams();
+ const initialSymbol=params.get("symbol")||(()=>{try{return localStorage.getItem("veltrion.realTerminal.symbol")||"1HZ100V"}catch{return "1HZ100V"}})();
  const [side,setSide]=useState(false),[symbol,setSymbol]=useState(initialSymbol),[price,setPrice]=useState(null),[feed,setFeed]=useState("CONNECTING");
  const [candles,setCandles]=useState([]),[ticks,setTicks]=useState([]),[tf,setTf]=useState(300),[account,setAccount]=useState(null),[portfolio,setPortfolio]=useState([]),[history,setHistory]=useState([]),[statements,setStatements]=useState([]);
  const historySocketRef=useRef(null),refreshBusy=useRef(false),retryRef=useRef(null),realRetryRef=useRef(null),realRetryAttemptRef=useRef(0),lastTickRef=useRef(0),tickWatchdogRef=useRef(null),tfRef=useRef(300);
  const lastGoodSnapshotRef=useRef(null),refreshDelayRef=useRef(15000);
+ const symbolRef=useRef(initialSymbol);
+ const reconnectTimerRef=useRef(null);
+ const tickWatchdogRef=useRef(null);
  useEffect(()=>{tfRef.current=tf},[tf]);
+ useEffect(()=>{
+   symbolRef.current=symbol;
+   try{localStorage.setItem("veltrion.realTerminal.symbol",symbol)}catch{}
+   const next=new URLSearchParams(params);
+   next.set("symbol",symbol);
+   setParams(next,{replace:true});
+ },[symbol]);
  const [error,setError]=useState(""),[lastSync,setLastSync]=useState(null),[syncStatus,setSyncStatus]=useState("PENDING"),[syncOpen,setSyncOpen]=useState(0),[syncClosed,setSyncClosed]=useState(0);
 
  const refresh=async()=>{
@@ -132,6 +142,8 @@ export default function RealMT5Terminal(){
    let dead=false,ws=null,retryTimer=null,serverTimer=null,connectTimeout=null;
    let serverFallbackActive=false;
    let endpointIndex=0;
+   let lastReceivedSymbol=symbol;
+   let reconnectAttempt=0;
 
    const loadServerHistory = async () => {
      if(dead) return;
@@ -172,6 +184,25 @@ export default function RealMT5Terminal(){
      serverTimer=null;
    };
 
+   const scheduleReconnect=(delay=1000)=>{
+     if(dead)return;
+     clearTimeout(retryTimer);
+     retryTimer=setTimeout(()=>{if(!dead)connect()},delay);
+   };
+
+   const armTickWatchdog=()=>{
+     clearTimeout(tickWatchdogRef.current);
+     tickWatchdogRef.current=setTimeout(()=>{
+       if(dead)return;
+       if(Date.now()-lastTickRef.current>7000){
+         setFeed("PUBLIC_MARKET_RECONNECTING");
+         try{ws?.close()}catch{}
+         if(!serverFallbackActive) pollServerMarket();
+         scheduleReconnect(Math.min(10000,1000*Math.max(1,reconnectAttempt)));
+       }
+     },8000);
+   };
+
    const connect=()=>{
      if(dead)return;
      clearTimeout(connectTimeout);
@@ -186,6 +217,8 @@ export default function RealMT5Terminal(){
          if(dead){try{ws.close()}catch{};return}
          setFeed("LIVE_PUBLIC_MARKET");
          lastTickRef.current=Date.now();
+         reconnectAttempt=0;
+         armTickWatchdog();
          ws.send(JSON.stringify({ticks_history:symbol,adjust_start_time:1,count:180,end:"latest",style:"candles",granularity:tf,req_id:7001}));
          ws.send(JSON.stringify({ticks:symbol,subscribe:1,req_id:91001}));
          clearTimeout(connectTimeout);
@@ -211,10 +244,18 @@ export default function RealMT5Terminal(){
              setFeed("LIVE_PUBLIC_MARKET");
              setError("");
              onTick(msg.tick);
+             armTickWatchdog();
            }
          }catch{}
        };
-       ws.onerror=()=>{setFeed("PUBLIC_MARKET_RECONNECTING");loadServerHistory();pollServerMarket();};
+       ws.onerror=()=>{
+         if(dead)return;
+         setFeed("PUBLIC_MARKET_RECONNECTING");
+         loadServerHistory();
+         pollServerMarket();
+         reconnectAttempt=Math.min(reconnectAttempt+1,5);
+         scheduleReconnect(Math.min(10000,1000*2**Math.min(reconnectAttempt,3)));
+       };
        ws.onclose=()=>{
          clearTimeout(connectTimeout);
          if(!dead){
@@ -224,7 +265,8 @@ export default function RealMT5Terminal(){
            endpointIndex=(endpointIndex+1)%DERIV_PUBLIC_HISTORY_ENDPOINTS.length;
            setFeed("PUBLIC_MARKET_RECONNECTING");
            if (!serverFallbackActive) pollServerMarket();
-           retryTimer=setTimeout(connect,1000);
+           reconnectAttempt=Math.min(reconnectAttempt+1,5);
+           scheduleReconnect(Math.min(10000,1000*2**Math.min(reconnectAttempt,3)));
          }
        };
      }catch{
@@ -234,9 +276,13 @@ export default function RealMT5Terminal(){
      }
    };
 
-   setCandles([]);
-   setTicks([]);
-   setPrice(null);
+   // Only reset market data when the user intentionally changes symbol/timeframe.
+   // Browser reconnects keep the last valid candles/ticks/price visible.
+   if(symbolRef.current!==lastReceivedSymbol || tfRef.current!==tf){
+     setCandles([]);
+     setTicks([]);
+     setPrice(null);
+   }
    setFeed("CONNECTING_PUBLIC_MARKET");
    connect();
 
@@ -245,6 +291,8 @@ export default function RealMT5Terminal(){
      clearTimeout(retryTimer);
      clearTimeout(connectTimeout);
      stopServerFallback();
+     clearTimeout(tickWatchdogRef.current);
+     clearTimeout(reconnectTimerRef.current);
      try{ws?.close()}catch{}
      historySocketRef.current=null;
    };
