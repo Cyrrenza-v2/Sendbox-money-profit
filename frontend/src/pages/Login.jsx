@@ -53,42 +53,13 @@ export default function Login() {
         password,
       });
 
-      // First-use path: if the owner account has not been created yet,
-      // create it using the same email/password form, then continue into
-      // the dashboard. Supabase Auth stores the password securely; the
-      // plaintext password is never written to the VELTRION database.
-      if (authError) {
-        const signup = await supabase.auth.signUp({
-          email: normalizedEmail,
-          password,
-          options: {
-            data: {
-              email: normalizedEmail,
-              owner: true,
-            },
-          },
-        });
-
-        if (signup.error) {
-          if (/already registered|already exists/i.test(signup.error.message || "")) {
-            throw new Error("The VELTRION owner account already exists, but the password was rejected. Check the password and try again.");
-          }
-          throw signup.error;
-        }
-        if (!signup.data.user) {
-          throw new Error("Account creation did not return a user.");
-        }
-
-        if (!signup.data.session) {
-          throw new Error(
-            "The VELTRION account was created, but Supabase requires email confirmation before the first login. Confirm the owner email, then return here to sign in."
-          );
-        }
-
-        data = signup.data;
-      }
-
       if (!data?.user) throw new Error("Login did not return an authenticated user.");
+
+      const authenticatedEmail = String(data.user.email || "").trim().toLowerCase();
+      if (authenticatedEmail !== OWNER_EMAIL) {
+        await supabase.auth.signOut();
+        throw new Error("Access denied: this account is not the VELTRION owner.");
+      }
 
       await recordSession(data.user.id);
       navigate("/", { replace: true });
@@ -107,12 +78,12 @@ export default function Login() {
           <small>PRIVATE TRADING PLATFORM</small>
         </div>
 
-        <div className="secure-badge">SECURE ADMIN ACCESS</div>
+        <div className="secure-badge">SECURE OWNER ACCESS</div>
 
         <h1>Login</h1>
         <p className="muted">
           Enter your VELTRION email and password to continue.
-          Your first successful login can create the owner Auth account automatically.
+          Only the owner email is permitted to access VELTRION.
         </p>
 
         {error && <div className="error-box">{error}</div>}
