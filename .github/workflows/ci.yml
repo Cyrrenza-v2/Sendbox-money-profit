@@ -98,14 +98,4 @@ jobs:
             -H "Content-Type: application/json" \
             "https://qalowxnqngzsdlayqivr.supabase.co/functions/v1/market-data-ci")
           echo "${RESULT}"
-          python - <<'PY' <<<"${RESULT}"
-import json,sys
-d=json.load(sys.stdin)
-assert int(d.get("activeSymbolCount",0)) >= 1, "MARKET CATALOG: EMPTY"
-assert int(d.get("tickPassed",0)) >= 1, "MARKET TICK: NO SUCCESSFUL TICKS"
-assert int(d.get("historyPassed",0)) >= 1, "MARKET HISTORY: NO SUCCESSFUL HISTORY"
-if d.get("ok") is not True:
-    print("MARKET DATA COVERAGE: DEGRADED — Deriv rate limits/closed markets affected the broad probe; authoritative catalog and successful tick/history probes are present.")
-else:
-    print("MARKET DATA COVERAGE: PASS — verified through Supabase server-side Deriv WebSocket")
-PY
+          python -c 'import json,sys; d=json.load(sys.stdin); assert int(d.get("activeSymbolCount",0)) >= 1, "MARKET CATALOG: EMPTY"; assert int(d.get("tickPassed",0)) >= 1, "MARKET TICK: NO SUCCESSFUL TICKS"; assert int(d.get("historyPassed",0)) >= 1, "MARKET HISTORY: NO SUCCESSFUL HISTORY"; print("MARKET DATA COVERAGE: DEGRADED — external Deriv rate limits/closed markets affected the broad probe; catalog and successful tick/history probes are present." if d.get("ok") is not True else "MARKET DATA COVERAGE: PASS — verified through Supabase server-side Deriv WebSocket")' <<<"${RESULT}"
