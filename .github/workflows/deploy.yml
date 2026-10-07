@@ -95,3 +95,5 @@ jobs:
 # Real terminal navigation fix deployment trigger: 2026-10-07.
 
 # Sandbox mirror + official Deriv MT5 web handoff deployment checkpoint: 2026-10-08.
+
+# MT5 demo/real telemetry UI + bridge v35 deployment verification: 2026-10-08.
