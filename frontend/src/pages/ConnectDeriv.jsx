@@ -53,6 +53,7 @@ export default function ConnectDeriv() {
 
       setAccount(data || null);
       setStatus(String(data?.status || "NOT CONNECTED").toUpperCase());
+      if (data?.last_verified_at) setSessionStatus("VERIFIED");
       if (data?.last_error) setError(String(data.last_error));
 
       const { data: realProviderAccount, error: realProviderError } = await supabase
@@ -95,10 +96,85 @@ export default function ConnectDeriv() {
   }, []);
 
   useEffect(() => {
+    let disposed = false;
+    let timer = null;
+
+    const continuity = async () => {
+      if (disposed || !navigator.onLine || document.visibilityState === "hidden") return;
+      try {
+        await load();
+        if (disposed) return;
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session?.access_token) return;
+
+        // The server owns the Deriv OAuth credential and refreshes it when possible.
+        // Re-issue a short-lived authenticated WebSocket session whenever the app
+        // returns online/visible or the periodic health check runs.
+        const { data, error: invokeError } = await supabase.functions.invoke("deriv-real-session", {
+          body: {},
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (invokeError || !data?.ok || !data?.websocket?.url) return;
+
+        await new Promise((resolve, reject) => {
+          let settled = false;
+          const ws = new WebSocket(data.websocket.url);
+          const finish = (fn, value) => {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timeout);
+            try { ws.close(); } catch {}
+            fn(value);
+          };
+          const timeout = window.setTimeout(() => finish(reject, new Error("continuity timeout")), 10000);
+          ws.onopen = () => {
+            try {
+              ws.send(JSON.stringify({ balance: 1, req_id: Date.now() }));
+            } catch {}
+          };
+          ws.onmessage = (event) => {
+            try {
+              const message = JSON.parse(event.data);
+              if (message?.error) return finish(reject, new Error(message.error.message || "Deriv verification failed"));
+              if (message?.msg_type === "balance") finish(resolve, message);
+            } catch {}
+          };
+          ws.onerror = () => finish(reject, new Error("Deriv WebSocket unavailable"));
+        }).catch(() => {});
+
+        if (!disposed) {
+          setSessionStatus("VERIFIED");
+          setRealAccountResult(data.account || null);
+          await load();
+          if (!disposed) await syncLiveBalance();
+        }
+      } catch {
+        // Keep the last server-known verified state visible while offline or during
+        // a transient provider/network interruption. The next continuity cycle retries.
+      }
+    };
+
+    const onWake = () => { void continuity(); };
+    const onOnline = () => { void continuity(); };
+    const onVisibility = () => { if (document.visibilityState === "visible") void continuity(); };
+
     const result = params.get("deriv");
     if (result === "connected") setStatus("CONNECTED");
     if (result === "error") setError(params.get("message") || "Deriv authorization was not completed.");
-    load();
+
+    void continuity();
+    window.addEventListener("online", onOnline);
+    window.addEventListener("focus", onWake);
+    document.addEventListener("visibilitychange", onVisibility);
+    timer = window.setInterval(continuity, 60000);
+
+    return () => {
+      disposed = true;
+      if (timer) window.clearInterval(timer);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("focus", onWake);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [load, params]);
 
   const verifyDemoSession = async () => {
@@ -160,7 +236,17 @@ export default function ConnectDeriv() {
           fn(value);
         };
         const timeout = window.setTimeout(() => finish(reject, new Error("Timed out opening the authenticated Deriv real WebSocket.")), 10000);
-        ws.onopen = () => finish(resolve);
+        ws.onopen = () => {
+          try { ws.send(JSON.stringify({ balance: 1, req_id: Date.now() })); }
+          catch { finish(reject, new Error("Unable to request the authenticated Deriv balance.")); }
+        };
+        ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            if (message?.error) return finish(reject, new Error(message.error.message || "Deriv authenticated verification failed."));
+            if (message?.msg_type === "balance") finish(resolve, message);
+          } catch {}
+        };
         ws.onerror = () => finish(reject, new Error("Deriv issued a session, but the authenticated real WebSocket could not be opened."));
       });
 
