@@ -25,7 +25,7 @@ function MarketWorkspace({ title }) {
   const {data:{user}}=await supabase.auth.getUser();
   if(!user)throw new Error("Sign in to view your account summaries.");
   const [sandbox,real]=await Promise.all([
-   supabase.from("sandbox_accounts").select("id,currency,available_capital,allocated_capital,status").eq("user_id",user.id).maybeSingle(),
+   supabase.from("sandbox_accounts").select("id,currency,available_capital,allocated_capital,status,sandbox_type").eq("user_id",user.id).eq("sandbox_type","demo").maybeSingle(),
    supabase.from("real_trading_accounts").select("id,currency,balance,equity,is_active,emergency_stopped").eq("user_id",user.id).maybeSingle()
   ]);
   if(sandbox.error)throw sandbox.error;
@@ -57,7 +57,7 @@ export default function WorkspacePage({title,section}){
  if(section==="positions"){const r=await supabase.from("sandbox_positions").select("id,sandbox_account_id,symbol,side,quantity,entry_price,current_price,unrealized_pnl,stop_loss,take_profit,opened_at,updated_at").eq("user_id",user.id).order("updated_at",{ascending:false}).limit(50);data=r.data;error=r.error;}
  else {
   if(section==="mt5"){const r=await supabase.from("mt5_connections").select("status,server,last_heartbeat_at,environment").eq("user_id",user.id).maybeSingle();data=r.data;error=r.error;}
-  else if(section==="sandbox"){const r=await supabase.from("sandbox_accounts").select("id,currency,initial_capital,available_capital,allocated_capital,withdrawable,status,created_at").eq("user_id",user.id).maybeSingle();data=r.data;error=r.error;}
+  else if(section==="sandbox"){const r=await supabase.from("sandbox_accounts").select("id,currency,initial_capital,available_capital,allocated_capital,withdrawable,status,created_at,sandbox_type").eq("user_id",user.id).eq("sandbox_type","demo").maybeSingle();data=r.data;error=r.error;}
   else if(section==="settings"){const r=await supabase.from("app_settings").select("environment,trading_mode,real_trading_enabled,updated_at").order("updated_at",{ascending:false}).limit(1).maybeSingle();data=r.data;error=r.error;}
   else if(section==="real"){const [account,settings,connection]=await Promise.all([
     supabase.from("real_trading_accounts").select("id,deriv_account_id,currency,is_active,emergency_stopped,balance,equity,max_stake,daily_loss_limit,created_at,updated_at").eq("user_id",user.id).maybeSingle(),
