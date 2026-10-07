@@ -30,18 +30,4 @@ jobs:
           RESPONSE=$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Fgithub.com%2FCyrrenza-v2%2FSendbox-money-profit" | jq -r '.value')
           RESULT=$(curl -sS -X POST -H "Authorization: Bearer ${RESPONSE}" -H "Content-Type: application/json" "https://qalowxnqngzsdlayqivr.supabase.co/functions/v1/deriv-continuity-ci" --data "{\"force_refresh\":${FORCE_REFRESH}}")
           echo "${RESULT}"
-          python - <<'PY' <<< "${RESULT}"
-import json,sys
-d=json.load(sys.stdin)
-assert int(d.get("accounts_checked",0)) >= 1, "DERIV CONTINUITY: NO ACCOUNTS CHECKED"
-for item in d.get("results",[]):
-    if item.get("ok") and item.get("reconnect_verified") is not True:
-        raise AssertionError("DERIV RECONNECT: NEGATIVE VERIFICATION")
-if d.get("ok") is True:
-    print("DERIV REAL CONTINUITY: PASS")
-else:
-    allowed=("DERIV_WS_TIMEOUT","DERIV_REAUTH_REQUIRED","DERIV_WEBSOCKET","DERIV_REQUEST_TIMEOUT","DERIV_API")
-    errors=[str(x.get("error","")) for x in d.get("results",[]) if x.get("error")]
-    assert errors and all(any(token in e for token in allowed) for e in errors), "DERIV CONTINUITY: UNEXPECTED FAILURE"
-    print("DERIV REAL CONTINUITY: DEGRADED — external Deriv connectivity did not complete, but the reconnect monitor returned only allowed transient/auth errors and no unsafe execution state.")
-PY
+          python -c 'import json,sys; d=json.load(sys.stdin); assert int(d.get("accounts_checked",0)) >= 1, "DERIV CONTINUITY: NO ACCOUNTS CHECKED"; errors=[str(x.get("error","")) for x in d.get("results",[]) if x.get("error")]; assert all(not x.get("ok") or x.get("reconnect_verified") is True for x in d.get("results",[])), "DERIV RECONNECT: NEGATIVE VERIFICATION"; allowed=("DERIV_WS_TIMEOUT","DERIV_REAUTH_REQUIRED","DERIV_WEBSOCKET","DERIV_REQUEST_TIMEOUT","DERIV_API"); assert d.get("ok") is True or (errors and all(any(token in e for token in allowed) for e in errors)), "DERIV CONTINUITY: UNEXPECTED FAILURE"; print("DERIV REAL CONTINUITY: PASS" if d.get("ok") is True else "DERIV REAL CONTINUITY: DEGRADED — allowed transient/auth connectivity condition; no unsafe execution state.")' <<< "${RESULT}"
