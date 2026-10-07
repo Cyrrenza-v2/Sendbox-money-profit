@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { supabase, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "../supabaseClient";
+import PWAInstallButton from "./PWAInstallButton";
 
 const secondaryGroups=[
  {label:"TRADING",items:[["AI Market Assistant","/app/trading/ai","✦"],["Orders","/app/trading/orders","≋"],["Trade History","/app/trading/history","◷"],["Deriv Connection","/app/deriv/account","⚡"],["MT5 Infrastructure","/app/mt5/overview","▦"]]},
@@ -47,7 +48,7 @@ export default function AppShell(){
     {isHome?<button className="vel-menu-toggle" onClick={()=>setDrawerOpen(true)} aria-label="Open secondary navigation">☰</button>:<button className="vel-back-home" onClick={()=>go("/app/home")} aria-label="Back to Home">←</button>}
     <button className="vel-topbar-brand" onClick={()=>go("/app/home")}>VELTRION</button>
     {!isHome&&primaryNav}
-    <div className="vel-topbar-right">
+    <div className="vel-topbar-right"><PWAInstallButton />
      <div className={"vel-health health-"+health.toLowerCase()}><span/> SYSTEM {health}</div>
      <button className="vel-theme-switch" onClick={()=>setTheme(t=>t==="dark"?"light":t==="light"?"system":"dark")} title="Cycle light, system and dark appearance">{theme==="dark"?"☾":theme==="light"?"☀":"◐"}</button>
      <span className="vel-mode-switch" title="VELTRION is configured for the real Sendbox account only">{mode} ACCOUNT <span>•</span></span>
