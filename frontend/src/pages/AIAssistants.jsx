@@ -38,6 +38,7 @@ export default function AIAssistants() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error("Your session has expired. Please sign in again.");
       const { data, error: invokeError } = await supabase.functions.invoke("ai-assistant", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
         body: { mode, message, history: current.slice(-8).map(({ role, content }) => ({ role, content })) },
       });
       if (invokeError) {
