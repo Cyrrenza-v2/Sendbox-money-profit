@@ -157,7 +157,9 @@ export default function RealMT5Terminal(){
    marketDataKeyRef.current=marketDataKey;
    let reconnectAttempt=0;
 
-   const mergeCandles = (incoming) => { const normalized=incoming.map(c=>({time:Number(c.epoch),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)})).filter(c=>[c.time,c.open,c.high,c.low,c.close].every(Number.isFinite)).sort((a,b)=>a.time-b.time); if(!normalized.length)return; setCandles(prev=>{const map=new Map(prev.map(c=>[c.time,c]));normalized.forEach(c=>map.set(c.time,c));return Array.from(map.values()).sort((a,b)=>a.time-b.time).slice(-180)}); };\n\n   const loadServerHistory = async () => {
+   const mergeCandles = (incoming) => { const normalized=incoming.map(c=>({time:Number(c.epoch),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)})).filter(c=>[c.time,c.open,c.high,c.low,c.close].every(Number.isFinite)).sort((a,b)=>a.time-b.time); if(!normalized.length)return; setCandles(prev=>{const map=new Map(prev.map(c=>[c.time,c]));normalized.forEach(c=>map.set(c.time,c));return Array.from(map.values()).sort((a,b)=>a.time-b.time).slice(-180)}); };
+
+   const loadServerHistory = async () => {
      if(dead) return;
      try {
        const data=await invoke("market-data",{operation:"history",symbol,granularity:tf});
@@ -220,7 +222,8 @@ export default function RealMT5Terminal(){
      clearTimeout(connectTimeout);
      try{
        setFeed("CONNECTING_PUBLIC_MARKET");
-       ws=new WebSocket(DERIV_PUBLIC_HISTORY_ENDPOINTS[endpointIndex]);\n       let historyReceived=false;
+       ws=new WebSocket(DERIV_PUBLIC_HISTORY_ENDPOINTS[endpointIndex]);
+       let historyReceived=false;
        historySocketRef.current=ws;
        connectTimeout=setTimeout(()=>{
          if(!dead&&Date.now()-lastTickRef.current>3000) pollServerMarket();
@@ -231,7 +234,9 @@ export default function RealMT5Terminal(){
          lastTickRef.current=Date.now();
          reconnectAttempt=0;
          armTickWatchdog();
-         ws.send(JSON.stringify({ticks_history:symbol,adjust_start_time:1,count:180,end:"latest",style:"candles",granularity:tf,req_id:7001}));\n         clearTimeout(historyWatchdogRef.current);\n         historyWatchdogRef.current=setTimeout(()=>{if(!dead&&!historyReceived)loadServerHistory()},4000);
+         ws.send(JSON.stringify({ticks_history:symbol,adjust_start_time:1,count:180,end:"latest",style:"candles",granularity:tf,req_id:7001}));
+         clearTimeout(historyWatchdogRef.current);
+         historyWatchdogRef.current=setTimeout(()=>{if(!dead&&!historyReceived)loadServerHistory()},4000);
          ws.send(JSON.stringify({ticks:symbol,subscribe:1,req_id:91001}));
          clearTimeout(connectTimeout);
        };
