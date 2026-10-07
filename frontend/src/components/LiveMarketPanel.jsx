@@ -383,24 +383,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
             setFeedMode("BROWSER");
             setError("");
             // Keep the expanded server-discovered catalog; browser discovery only adds/refreshes symbols.
-            if (unique.length) {
-              const syncedAt = new Date().toISOString();
-              const rows = unique.map(item => ({
-                source: "deriv",
-                symbol: item.symbol,
-                display_name: item.name,
-                market: item.market,
-                submarket: item.subgroup || "",
-                is_active: true,
-                raw: item,
-                updated_at: syncedAt
-              }));
-              supabase.from("market_symbols").upsert(rows, { onConflict: "symbol" })
-                .then(({ error: syncError }) => {
-                  if (syncError) console.warn("Supabase market catalog sync failed:", syncError.message);
-                })
-                .catch(syncError => console.warn("Supabase market catalog sync failed:", syncError?.message || syncError));
-            }
+
 
             subscribeAllMarkets(unique);
             return;
