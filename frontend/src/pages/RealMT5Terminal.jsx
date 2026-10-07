@@ -75,6 +75,8 @@ export default function RealMT5Terminal(){
   const positions=Array.isArray(meta?.positions)?meta.positions:[];
   const orders=Array.isArray(meta?.orders)?meta.orders:[];
   const deals=Array.isArray(meta?.deals)?meta.deals:[];
+  const historyOrders=Array.isArray(meta?.history_orders)?meta.history_orders:[];
+  const historyDeals=Array.isArray(meta?.history_deals)?meta.history_deals:[];
   const environment=String(connection?.environment||meta?.environment||"real").toLowerCase();
   const connected=connection?.status==="connected";
   const displayStatus=connected?"MT5 BRIDGE CONNECTED":loading?"CONNECTING":"MT5 BRIDGE NOT CONNECTED";
@@ -143,8 +145,8 @@ export default function RealMT5Terminal(){
           </section>
 
           <section className="vt-panel">
-            <div className="vt-section-title"><div><h2>Orders & Deals</h2><p>Last synchronized MT5 records</p></div><span className="vt-ai-tag">{orders.length+deals.length}</span></div>
-            {orders.length||deals.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Type</th><th>Ticket</th><th>Symbol</th><th>Volume</th><th>Price</th></tr></thead><tbody>{[...orders.map(x=>({...x,__kind:"ORDER"})),...deals.map(x=>({...x,__kind:"DEAL"}))].slice(0,50).map((x,i)=><tr key={String(x.ticket??x.order??x.deal??i)+x.__kind}><td>{x.__kind}</td><td>{x.ticket??x.order??x.deal??"—"}</td><td>{x.symbol??"—"}</td><td>{x.volume??"—"}</td><td>{x.price??"—"}</td></tr>)}</tbody></table></div>:<div className="vt-empty">{connected?"No orders/deals in the latest snapshot.":"Connect the VELTRION MT5 bridge to display orders and deals."}</div>}
+            <div className="vt-section-title"><div><h2>Orders & Trade History</h2><p>Active orders plus recent synchronized MT5 history</p></div><span className="vt-ai-tag">{orders.length+deals.length+historyOrders.length+historyDeals.length}</span></div>
+            {orders.length||deals.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Type</th><th>Ticket</th><th>Symbol</th><th>Volume</th><th>Price</th></tr></thead><tbody>{[...orders.map(x=>({...x,__kind:"ORDER"})),...deals.map(x=>({...x,__kind:"DEAL"})),...historyOrders.map(x=>({...x,__kind:"HISTORY ORDER"})),...historyDeals.map(x=>({...x,__kind:"HISTORY DEAL"}))].slice(0,50).map((x,i)=><tr key={String(x.ticket??x.order??x.deal??i)+x.__kind}><td>{x.__kind}</td><td>{x.ticket??x.order??x.deal??"—"}</td><td>{x.symbol??"—"}</td><td>{x.volume??"—"}</td><td>{x.price??"—"}</td></tr>)}</tbody></table></div>:<div className="vt-empty">{connected?"No orders/deals in the latest snapshot.":"Connect the VELTRION MT5 bridge to display orders and deals."}</div>}
           </section>
         </div>
 
