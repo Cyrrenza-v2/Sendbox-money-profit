@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { Outlet } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 
 const FUNCTION_NAME = "deriv-real-session";
@@ -87,5 +88,5 @@ export default function DerivContinuity() {
     };
   }, []);
 
-  return null;
+  return <Outlet />;
 }
