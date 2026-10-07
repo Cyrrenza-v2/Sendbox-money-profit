@@ -53,6 +53,7 @@ export default function ConnectDeriv() {
 
       setAccount(data || null);
       setStatus(String(data?.status || "NOT CONNECTED").toUpperCase());
+      if (data?.last_verified_at) setSessionStatus("VERIFIED");
       if (data?.last_error) setError(String(data.last_error));
 
       const { data: realProviderAccount, error: realProviderError } = await supabase
@@ -160,7 +161,17 @@ export default function ConnectDeriv() {
           fn(value);
         };
         const timeout = window.setTimeout(() => finish(reject, new Error("Timed out opening the authenticated Deriv real WebSocket.")), 10000);
-        ws.onopen = () => finish(resolve);
+        ws.onopen = () => {
+          try { ws.send(JSON.stringify({ balance: 1, req_id: Date.now() })); }
+          catch { finish(reject, new Error("Unable to request the authenticated Deriv balance.")); }
+        };
+        ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            if (message?.error) return finish(reject, new Error(message.error.message || "Deriv authenticated verification failed."));
+            if (message?.msg_type === "balance") finish(resolve, message);
+          } catch {}
+        };
         ws.onerror = () => finish(reject, new Error("Deriv issued a session, but the authenticated real WebSocket could not be opened."));
       });
 
