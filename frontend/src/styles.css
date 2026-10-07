@@ -390,3 +390,9 @@ html,body,#root,.vel-app,.vel-main,.vel-content{background:Canvas!important}
 .app-error-card small{color:#8b949e}
 .app-error-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
 .app-error-actions button,.app-error-card>button{border:1px solid #3d4a54;border-radius:7px;padding:10px 14px;background:#0d1117;color:#fff;cursor:pointer;font-weight:700}
+
+
+/* PWA install control */
+.vel-install-button{border:1px solid var(--vel-border);background:linear-gradient(135deg,var(--vel-accent,#6366f1),var(--vel-accent-2,#8b5cf6));color:#fff;border-radius:9px;padding:9px 12px;font-size:10px;font-weight:850;letter-spacing:.4px;cursor:pointer;white-space:nowrap;box-shadow:0 6px 18px rgba(99,102,241,.18)}
+.vel-install-button:hover{filter:brightness(1.08);transform:translateY(-1px)}
+@media(max-width:560px){.vel-install-button{padding:8px 9px;font-size:9px}.vel-topbar-right{gap:7px}.vel-user{display:none}}
