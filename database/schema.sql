@@ -23,9 +23,9 @@ begin
     values (owner_id,'admin')
     on conflict (user_id,role) do nothing;
 
-    insert into public.sandbox_accounts(user_id,currency,initial_capital,available_capital,allocated_capital,withdrawable,status)
-    values (owner_id,'USD',100000,100000,0,0,'active')
-    on conflict (user_id) do nothing;
+    insert into public.sandbox_accounts(user_id,currency,initial_capital,available_capital,allocated_capital,withdrawable,status,sandbox_type)
+    values (owner_id,'USD',100000,100000,0,0,'active','demo')
+    on conflict (user_id,sandbox_type) do nothing;
 
     insert into public.sandbox_balances(user_id,sandbox_account_id,currency,cash,equity)
     select user_id,id,currency,available_capital,available_capital
