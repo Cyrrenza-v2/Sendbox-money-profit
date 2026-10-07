@@ -91,3 +91,5 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 # Terminal navigation deployment checkpoint: 2026-10-06
+
+# Live URL deployment verification trigger: 2026-10-07.
