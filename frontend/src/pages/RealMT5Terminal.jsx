@@ -46,11 +46,13 @@ export default function RealMT5Terminal(){
   const [error,setError]=useState("");
   const [lastSync,setLastSync]=useState(null);
   const [loading,setLoading]=useState(true);
+  const [channels,setChannels]=useState({});
 
   const refresh=async()=>{
     try{
       const data=await invokeMt5Bridge();
       setSnapshot(data?.snapshot||null);
+      setChannels(data?.connections||{});
       setError("");
       setLastSync(new Date());
     }catch(e){
@@ -69,9 +71,9 @@ export default function RealMT5Terminal(){
     return()=>{dead=true;clearInterval(id);document.removeEventListener("visibilitychange",wake);window.removeEventListener("focus",wake)};
   },[]);
 
-  const connection=snapshot?.connection||null;
+  const connection=snapshot||null;
   const meta=connection?.metadata||{};
-  const account=meta?.account||{};
+  const account={balance:meta.balance,equity:meta.equity,margin:meta.margin,free_margin:meta.free_margin};
   const positions=Array.isArray(meta?.positions)?meta.positions:[];
   const orders=Array.isArray(meta?.orders)?meta.orders:[];
   const deals=Array.isArray(meta?.deals)?meta.deals:[];
@@ -146,11 +148,11 @@ export default function RealMT5Terminal(){
 
           <section className="vt-panel">
             <div className="vt-section-title"><div><h2>Orders & Trade History</h2><p>Active orders plus recent synchronized MT5 history</p></div><span className="vt-ai-tag">{orders.length+deals.length+historyOrders.length+historyDeals.length}</span></div>
-            {orders.length||deals.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Type</th><th>Ticket</th><th>Symbol</th><th>Volume</th><th>Price</th></tr></thead><tbody>{[...orders.map(x=>({...x,__kind:"ORDER"})),...deals.map(x=>({...x,__kind:"DEAL"})),...historyOrders.map(x=>({...x,__kind:"HISTORY ORDER"})),...historyDeals.map(x=>({...x,__kind:"HISTORY DEAL"}))].slice(0,50).map((x,i)=><tr key={String(x.ticket??x.order??x.deal??i)+x.__kind}><td>{x.__kind}</td><td>{x.ticket??x.order??x.deal??"—"}</td><td>{x.symbol??"—"}</td><td>{x.volume??"—"}</td><td>{x.price??"—"}</td></tr>)}</tbody></table></div>:<div className="vt-empty">{connected?"No orders/deals in the latest snapshot.":"Connect the VELTRION MT5 bridge to display orders and deals."}</div>}
+            {orders.length||deals.length||historyOrders.length||historyDeals.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Type</th><th>Ticket</th><th>Symbol</th><th>Volume</th><th>Price</th></tr></thead><tbody>{[...orders.map(x=>({...x,__kind:"ORDER"})),...deals.map(x=>({...x,__kind:"DEAL"})),...historyOrders.map(x=>({...x,__kind:"HISTORY ORDER"})),...historyDeals.map(x=>({...x,__kind:"HISTORY DEAL"}))].slice(0,50).map((x,i)=><tr key={String(x.ticket??x.order??x.deal??i)+x.__kind}><td>{x.__kind}</td><td>{x.ticket??x.order??x.deal??"—"}</td><td>{x.symbol??"—"}</td><td>{x.volume??"—"}</td><td>{x.price??"—"}</td></tr>)}</tbody></table></div>:<div className="vt-empty">{connected?"No orders/deals in the latest snapshot.":"Connect the VELTRION MT5 bridge to display orders and deals."}</div>}
           </section>
         </div>
 
-        <section className="vt-panel">
+        <section className="vt-panel">\n          <div className="vt-section-title"><div><h2>MT5 Account Channels</h2><p>Separate telemetry for the Deriv demo and real MT5 accounts</p></div><span className="vt-ai-tag">READ ONLY</span></div>\n          <div className="metric-grid">\n            {["sandbox","real"].map(env=>{const c=channels[env];const m=c?.metadata||{};const fresh=c?.last_heartbeat_at&&Date.parse(c.last_heartbeat_at)>Date.now()-45000;return <div className="metric-card" key={env}><span>{env==="sandbox"?"DEMO":"REAL"} MT5</span><strong>{c?(fresh?"CONNECTED":"STALE"):"NOT CONNECTED"}</strong><small>{c?((c.broker||"MT5")+" · "+(c.server||"—")+" · login "+(c.login||"—")+" · balance "+fmt(m.balance,2)+" "+(c.account_currency||"USD")):"Waiting for an authenticated MT5 bridge heartbeat"}</small></div>})}\n          </div>\n          <div className="market-detail-note"><strong>Recording:</strong> each authenticated MT5 heartbeat is stored as a connection snapshot, heartbeat record, account snapshot, sync event, and integration event. No synthetic trade records are created.</div>\n        </section>\n        <section className="vt-panel">
           <div className="vt-section-title"><div><h2>Real Trading Gate</h2><p>Production execution remains deliberately locked</p></div><span className="vt-ai-tag">LOCKED</span></div>
           <div className="market-detail-note">
             VELTRION will not place a real MT5 order from this page. Your real MT5 account can be traded through the official Deriv MT5 terminal, while VELTRION can retain the private monitoring/reconciliation layer. This prevents the previous mismatch where the page called Deriv's Options trading API while presenting itself as an MT5 terminal.
