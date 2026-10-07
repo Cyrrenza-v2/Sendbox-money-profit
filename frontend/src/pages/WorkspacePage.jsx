@@ -20,27 +20,31 @@ const configBySection = {
 
 function MarketWorkspace({ title }) {
  const navigate=useNavigate();
- const [accountState,setAccountState]=useState({loading:true,sandbox:null,real:null,error:""});
+ const [accountState,setAccountState]=useState({loading:true,sandbox:null,mirror:null,real:null,error:""});
  useEffect(()=>{let alive=true;async function load(){try{
   const {data:{user}}=await supabase.auth.getUser();
   if(!user)throw new Error("Sign in to view your account summaries.");
-  const [sandbox,real]=await Promise.all([
+  const [sandbox,mirror,real]=await Promise.all([
    supabase.from("sandbox_accounts").select("id,currency,available_capital,allocated_capital,status,sandbox_type").eq("user_id",user.id).eq("sandbox_type","demo").maybeSingle(),
+   supabase.from("sandbox_accounts").select("id,currency,available_capital,allocated_capital,status,sandbox_type").eq("user_id",user.id).eq("sandbox_type","real_mirror").maybeSingle(),
    supabase.from("real_trading_accounts").select("id,currency,balance,equity,is_active,emergency_stopped").eq("user_id",user.id).maybeSingle()
   ]);
   if(sandbox.error)throw sandbox.error;
+  if(mirror.error)throw mirror.error;
   if(real.error)throw real.error;
-  if(alive)setAccountState({loading:false,sandbox:sandbox.data,real:real.data,error:""});
- }catch(e){if(alive)setAccountState({loading:false,sandbox:null,real:null,error:e?.message||"Account summary unavailable."});}}
+  if(alive)setAccountState({loading:false,sandbox:sandbox.data,mirror:mirror.data,real:real.data,error:""});
+ }catch(e){if(alive)setAccountState({loading:false,sandbox:null,mirror:null,real:null,error:e?.message||"Account summary unavailable."});}}
  load();return()=>{alive=false;};},[]);
  return <div className="vel-page">
   <div className="vel-page-heading"><div><div className="vel-eyebrow">VELTRION / MARKET WATCH</div><h1>{title}</h1><p>Browse Deriv markets, check the latest public quotes, then open the terminal for candles and sandbox order entry.</p></div><span className="vel-data-source">SOURCE · DERIV PUBLIC MARKET FEED</span></div>
   <div className="market-account-strip">
    <div className="market-account-card"><span>YOUR SANDBOX ACCOUNT</span><strong>{accountState.loading?"Loading…":accountState.sandbox?((accountState.sandbox.currency||"USD")+" "+Number(accountState.sandbox.available_capital||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})):"Not provisioned"}</strong><small>{accountState.sandbox?("Virtual balance · "+(accountState.sandbox.status||"available")):"Virtual orders require a sandbox account"}</small></div>
    <div className="market-account-card"><span>YOUR REAL DERIV ACCOUNT</span><strong>{accountState.loading?"Loading…":accountState.real?(accountState.real.currency||"Currency unavailable")+" "+(accountState.real.balance==null?"Balance unavailable":Number(accountState.real.balance).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})):"Not connected"}</strong><small>{accountState.real?(accountState.real.is_active?"Account record active":"Account record inactive"):"Real trading remains locked until separately verified"}</small></div>
-   <div className="market-account-card market-account-state"><span>TRADING MODE</span><strong>Sandbox only</strong><small>Market browsing does not execute an order</small></div>
+   <div className="market-account-card"><span>REAL-ACCOUNT MIRROR SANDBOX</span><strong>{accountState.loading?"Loading…":accountState.mirror?((accountState.mirror.currency||"USD")+" "+Number(accountState.mirror.available_capital||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})):"Not provisioned"}</strong><small>Virtual mirror only · never becomes Deriv cash</small></div>
+   <div className="market-account-card market-account-state"><span>REAL TRADING HANDOFF</span><strong>Deriv MT5 Web</strong><small>Real orders remain in Deriv's official terminal</small></div>
   </div>
   {accountState.error&&<div className="vel-error" role="status">{accountState.error}</div>}
+  <div className="vel-info-note">The mirror sandbox is for pre-trade simulation against the live market. It is not a funding bridge. When you are ready to place a real MT5 order, use the official Deriv MT5 Web terminal; VELTRION can reconcile confirmed real-account results afterward.</div>
   <LiveMarketPanel onSymbolChange={()=>{}} onOpenTerminal={symbol=>{
    const nextSymbol=encodeURIComponent(symbol||"1HZ100V");
    navigate(`/app/trading/real-terminal?symbol=${nextSymbol}`,{replace:false});
