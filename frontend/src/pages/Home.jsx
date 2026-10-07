@@ -6,7 +6,7 @@ const display=value=>value==null||value===""?"Unavailable":String(value);
 async function fetchOverview(){
  const {data:{user}}=await supabase.auth.getUser(); if(!user) throw new Error("AUTH_REQUIRED");
  const [demoQ,realQ,walletQ,accountsQ]=await Promise.all([
-  supabase.from("sandbox_accounts").select("id,currency,initial_capital,available_capital,allocated_capital,withdrawable,status,created_at").eq("user_id",user.id).order("created_at",{ascending:true}).limit(1).maybeSingle(),
+  supabase.from("sandbox_accounts").select("id,currency,initial_capital,available_capital,allocated_capital,withdrawable,status,created_at,sandbox_type").eq("user_id",user.id).eq("sandbox_type","demo").maybeSingle(),
   supabase.from("real_trading_accounts").select("id,deriv_account_id,currency,balance,equity,is_active,emergency_stopped,max_stake,daily_loss_limit,updated_at").eq("user_id",user.id).maybeSingle(),
   supabase.from("real_profit_wallets").select("id,account_id,available_balance,reserved_balance,currency,updated_at").maybeSingle(),
   supabase.from("deriv_accounts").select("deriv_account_id,account_type,currency,status,last_synced_at").eq("user_id",user.id).order("last_synced_at",{ascending:false}).limit(10)
