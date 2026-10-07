@@ -20,9 +20,16 @@ export default function OperationsControlView(){
   useEffect(()=>{load();const t=setInterval(load,10000);return()=>clearInterval(t)},[]);
   async function setGlobalStop(active){
     setBusy(true);setMessage("");
-    const {data:{user}}=await supabase.auth.getUser();
-    if(!user){setMessage("AUTH_REQUIRED");setBusy(false);return;}
-    const {data,error}=await supabase.functions.invoke("admin-control",{body:{active}});
+    let {data:sessionData,error:sessionError}=await supabase.auth.getSession();
+    if(sessionError){setMessage("AUTH_SESSION_LOOKUP_FAILED");setBusy(false);return;}
+    let session=sessionData?.session;
+    if(!session){setMessage("AUTH_REQUIRED");setBusy(false);return;}
+    if(session.expires_at && session.expires_at*1000-Date.now()<60000){
+      const refreshed=await supabase.auth.refreshSession();
+      if(refreshed.error||!refreshed.data?.session){setMessage("AUTH_SESSION_REFRESH_FAILED");setBusy(false);return;}
+      session=refreshed.data.session;
+    }
+    const {data,error}=await supabase.functions.invoke("admin-control",{body:{active},headers:{"authorization":"Bearer "+session.access_token}});
     if(error){
       let detail = data?.error || "";
       try {
