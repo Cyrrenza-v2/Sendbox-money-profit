@@ -1,360 +1,162 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import LiveMarketPanel from "../components/LiveMarketPanel";
 import { supabase } from "../supabaseClient";
 
-const fn = "trading-service";
-const walletFn = "wallet-service";
-const TIMEFRAMES = [
-  {label:"1m",seconds:60},{label:"5m",seconds:300},{label:"15m",seconds:900},
-  {label:"1h",seconds:3600},{label:"4h",seconds:14400},{label:"1d",seconds:86400}
-];
-const DERIV_PUBLIC_HISTORY_ENDPOINTS = [
-  "wss://api.derivws.com/trading/v1/options/ws/public",
-  "wss://ws.binaryws.com/websockets/v3",
-  "wss://ws.derivws.com/websockets/v3?app_id=1089"
-];
-const fmt=(n,d=5)=>Number.isFinite(Number(n))?Number(n).toLocaleString("en-US",{maximumFractionDigits:d}):"—";
-async function invoke(name, body){
-  // Always resolve the current Supabase session before calling protected Edge Functions.
-  // This avoids stale/missing Authorization headers after mobile wake, tab suspension,
-  // or an expired access token while keeping market-data JWT protection enabled.
-  let { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  let session = sessionData?.session || null;
-  if (sessionError) throw new Error("AUTH_SESSION_LOOKUP_FAILED");
-  if (!session) throw new Error("AUTH_SESSION_REQUIRED");
+const DERIV_MT5_WEB = "https://deriv.com/trading-platforms/mt5/web-terminal";
+const fmt=(n,d=2)=>Number.isFinite(Number(n))?Number(n).toLocaleString("en-US",{maximumFractionDigits:d}):"—";
 
-  const expiresAtMs = Number(session.expires_at || 0) * 1000;
-  if (expiresAtMs && expiresAtMs < Date.now() + 60000) {
-    const refreshed = await supabase.auth.refreshSession();
-    if (refreshed.error || !refreshed.data?.session) throw new Error("AUTH_SESSION_REFRESH_FAILED");
-    session = refreshed.data.session;
+async function invokeMt5Bridge(){
+  let {data:sessionData,error:sessionError}=await supabase.auth.getSession();
+  let session=sessionData?.session||null;
+  if(sessionError) throw new Error("AUTH_SESSION_LOOKUP_FAILED");
+  if(!session) throw new Error("AUTH_SESSION_REQUIRED");
+  const expiresAtMs=Number(session.expires_at||0)*1000;
+  if(expiresAtMs&&expiresAtMs<Date.now()+60000){
+    const refreshed=await supabase.auth.refreshSession();
+    if(refreshed.error||!refreshed.data?.session) throw new Error("AUTH_SESSION_REFRESH_FAILED");
+    session=refreshed.data.session;
   }
-
-  const { data, error } = await supabase.functions.invoke(name, {
-    body,
-    headers: { Authorization: `Bearer ${session.access_token}` }
+  const {data,error}=await supabase.functions.invoke("mt5-bridge",{
+    method:"GET",
+    headers:{Authorization:`Bearer ${session.access_token}`}
   });
   if(error){
-    let detail = data?.error || "";
-    try {
-      const response = error?.context;
-      if (!detail && response?.json) {
-        const bodyText = await response.clone().text();
-        try { detail = JSON.parse(bodyText)?.error || JSON.parse(bodyText)?.message || bodyText; } catch {}
+    let detail=data?.error||"";
+    try{
+      const response=error?.context;
+      if(!detail&&response?.json){
+        const body=await response.clone().json();
+        detail=body?.error||body?.message||"";
       }
-    } catch {}
-    throw new Error(String(detail || error.message || "REQUEST_FAILED"));
+    }catch{}
+    throw new Error(String(detail||error.message||"MT5_BRIDGE_UNAVAILABLE"));
   }
-  if(!data?.ok) throw new Error(data?.error||"REQUEST_FAILED");
-  return data.data;
+  return data;
 }
-function Chart({candles,price,symbol}){
-  const data=candles.slice(-100),w=1100,h=360,p=18;
-  if(!data.length)return <div className="vt-chart-empty"><span className="vt-live-dot"/> Loading {symbol} candles…</div>;
-  const lo=Math.min(...data.map(x=>x.low),Number(price)||Infinity),hi=Math.max(...data.map(x=>x.high),Number(price)||-Infinity),range=hi-lo||1,step=(w-90)/data.length,y=v=>p+(hi-v)/range*(h-45);
-  return <svg className="vt-chart-svg" viewBox={`0 0 ${w} ${h}`} role="img" aria-label={`Live chart for ${symbol}`}>
-    {[0,1,2,3,4].map(i=><line key={i} x1={p} x2={w-72} y1={p+(h-45)*i/4} y2={p+(h-45)*i/4} stroke="currentColor" opacity=".12" strokeDasharray="3 5"/>)}
-    {data.map((c,i)=>{const x=p+i*step+step/2,up=c.close>=c.open,col=up?"#34d399":"#f87171",bw=Math.max(2,Math.min(10,step*.62));return <g key={c.time}><line x1={x} x2={x} y1={y(c.high)} y2={y(c.low)} stroke={col}/><rect x={x-bw/2} y={y(Math.max(c.open,c.close))} width={bw} height={Math.max(1,Math.abs(y(c.open)-y(c.close)))} fill={col}/></g>})}
-    {Number.isFinite(Number(price))&&<><line x1={p} x2={w-72} y1={y(Number(price))} y2={y(Number(price))} stroke="#60a5fa" strokeDasharray="5 4"/><text x={w-65} y={y(Number(price))+4} fill="#93c5fd" fontSize="11">{fmt(price,8)}</text></>}
-  </svg>;
-}
+
+function Metric({label,value,detail}){return <div className="market-account-card"><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>}
+
 export default function RealMT5Terminal(){
- const [params,setParams]=useSearchParams();
- const initialSymbol=params.get("symbol")||(()=>{try{return localStorage.getItem("veltrion.realTerminal.symbol")||"1HZ100V"}catch{return "1HZ100V"}})();
- const [side,setSide]=useState(false),[symbol,setSymbol]=useState(initialSymbol),[price,setPrice]=useState(null),[feed,setFeed]=useState("CONNECTING");
- const [candles,setCandles]=useState([]),[ticks,setTicks]=useState([]),[tf,setTf]=useState(300),[account,setAccount]=useState(null),[portfolio,setPortfolio]=useState([]),[history,setHistory]=useState([]),[statements,setStatements]=useState([]);
- const historySocketRef=useRef(null),refreshBusy=useRef(false),retryRef=useRef(null),realRetryRef=useRef(null),realRetryAttemptRef=useRef(0),lastTickRef=useRef(0),tfRef=useRef(300);
- const lastGoodSnapshotRef=useRef(null),refreshDelayRef=useRef(15000);
- const symbolRef=useRef(initialSymbol);
- const marketDataKeyRef=useRef(`${initialSymbol}:300`);
- const tickWatchdogRef=useRef(null),historyWatchdogRef=useRef(null),seenTicksRef=useRef(new Set());
- useEffect(()=>{tfRef.current=tf},[tf]);
- useEffect(()=>{
-   symbolRef.current=symbol;
-   try{localStorage.setItem("veltrion.realTerminal.symbol",symbol)}catch{}
-   const next=new URLSearchParams(params);
-   next.set("symbol",symbol);
-   setParams(next,{replace:true});
- },[symbol]);
- const [error,setError]=useState(""),[lastSync,setLastSync]=useState(null),[syncStatus,setSyncStatus]=useState("PENDING"),[syncOpen,setSyncOpen]=useState(0),[syncClosed,setSyncClosed]=useState(0);
+  const [params,setParams]=useSearchParams();
+  const symbol=params.get("symbol")||"frxEURUSD";
+  const [side,setSide]=useState(false);
+  const [snapshot,setSnapshot]=useState(null);
+  const [error,setError]=useState("");
+  const [lastSync,setLastSync]=useState(null);
+  const [loading,setLoading]=useState(true);
 
- const refresh=async()=>{
-   if(refreshBusy.current)return;
-   refreshBusy.current=true;
-   try{
-     const s=await invoke(fn,{operation:"real_snapshot"});
-     if(s){
-       setAccount(s);
-       const { data: syncedPositions, error: positionsError } = await supabase
-         .from("positions")
-         .select("external_position_id,symbol,side,quantity,entry_price,current_price,unrealized_pnl,status,observed_at")
-         .eq("source","deriv")
-         .eq("environment","real")
-         .order("observed_at",{ascending:false});
-       if (positionsError) throw positionsError;
-       setPortfolio(Array.isArray(syncedPositions) ? syncedPositions : []);
-       setHistory(Array.isArray(s?.profit_table?.transactions)?s.profit_table.transactions:[]);
-       setStatements(Array.isArray(s?.statement?.transactions)?s.statement.transactions:[]);
-       setSyncStatus(s?.supabase_sync?.status||"PENDING");
-       setSyncOpen(Number(s?.supabase_sync?.open_positions||0));
-       setSyncClosed(Number(s?.supabase_sync?.closed_orders||0));
-       setLastSync(new Date());
-       setError("");
-     }
-   }catch(e){
-     setError(e.message||"REAL_ACCOUNT_SYNC_FAILED");
-   }finally{refreshBusy.current=false}
- };
+  const refresh=async()=>{
+    try{
+      const data=await invokeMt5Bridge();
+      setSnapshot(data?.snapshot||null);
+      setError("");
+      setLastSync(new Date());
+    }catch(e){
+      setError(e.message||"MT5_BRIDGE_UNAVAILABLE");
+    }finally{setLoading(false)}
+  };
 
- useEffect(()=>{
-   let dead=false;
-   let scheduled=null;
+  useEffect(()=>{
+    let dead=false;
+    const run=async()=>{if(!dead)await refresh()};
+    run();
+    const id=setInterval(run,5000);
+    const wake=()=>{if(!document.hidden)run()};
+    document.addEventListener("visibilitychange",wake);
+    window.addEventListener("focus",wake);
+    return()=>{dead=true;clearInterval(id);document.removeEventListener("visibilitychange",wake);window.removeEventListener("focus",wake)};
+  },[]);
 
-   const schedule=(delay=refreshDelayRef.current)=>{
-     if(dead)return;
-     clearTimeout(scheduled);
-     scheduled=setTimeout(async()=>{
-       if(dead)return;
-       await refresh();
-       schedule();
-     },delay);
-   };
+  const connection=snapshot?.connection||null;
+  const meta=connection?.metadata||{};
+  const account=meta?.account||{};
+  const positions=Array.isArray(meta?.positions)?meta.positions:[];
+  const orders=Array.isArray(meta?.orders)?meta.orders:[];
+  const deals=Array.isArray(meta?.deals)?meta.deals:[];
+  const environment=String(connection?.environment||meta?.environment||"real").toLowerCase();
+  const connected=connection?.status==="connected";
+  const displayStatus=connected?"MT5 BRIDGE CONNECTED":loading?"CONNECTING":"MT5 BRIDGE NOT CONNECTED";
+  const syncTime=lastSync?lastSync.toLocaleTimeString():"Not synchronized";
+  const terminalSymbol=useMemo(()=>symbol,[symbol]);
 
-   const run=async()=>{
-     await refresh();
-     schedule();
-   };
+  const openOfficialMt5=()=>window.open(DERIV_MT5_WEB,"_blank","noopener,noreferrer");
 
-   const wake=async()=>{
-     if(dead)return;
-     await refresh();
-     schedule();
-   };
+  return <div className="app-layout">
+    <Sidebar isOpen={side} onClose={()=>setSide(false)}/>
+    <div className="app-main">
+      <header className="topbar">
+        <button className="menu-button" onClick={()=>setSide(true)}>☰</button>
+        <span className="topbar-brand">VELTRION MT5 WORKSPACE</span>
+        <span className="admin-badge real-badge">● READ ONLY</span>
+      </header>
 
-   run();
-   const onVisibility=()=>{if(!document.hidden)wake()};
-   const onFocus=()=>wake();
-   document.addEventListener("visibilitychange",onVisibility);
-   window.addEventListener("focus",onFocus);
+      <main className="content vt-page">
+        <header className="vt-heading">
+          <div>
+            <span className="eyebrow real-eyebrow">DERIV MT5 STANDARD REAL</span>
+            <h1>MT5 Account — Read Only</h1>
+            <p>VELTRION monitors your Deriv MT5 account through the private bridge. Real MT5 orders are executed only in Deriv MT5's official web, desktop, or mobile terminal.</p>
+          </div>
+          <div className="vt-header-actions">
+            <span className={connected?"vt-feed live":"vt-feed"}><i/> {displayStatus}</span>
+            <button className="market-open-terminal" onClick={openOfficialMt5}>Open Deriv MT5 Web <span>→</span></button>
+          </div>
+        </header>
 
-   return()=>{
-     dead=true;
-     clearTimeout(scheduled);
-     clearTimeout(retryRef.current);
-     document.removeEventListener("visibilitychange",onVisibility);
-     window.removeEventListener("focus",onFocus);
-   };
- },[]);
+        {error&&<div className="market-detail-note">MT5 bridge: {error}. The terminal will retry automatically and will not invent account data.</div>}
 
- useEffect(()=>{
-   let dead=false,ws=null,retryTimer=null,serverTimer=null,connectTimeout=null;
-   let serverFallbackActive=false;
-   let endpointIndex=0;
-   const marketDataKey=`${symbol}:${tf}`;
-   const resetMarketData=marketDataKeyRef.current!==marketDataKey;
-   marketDataKeyRef.current=marketDataKey;
-   let reconnectAttempt=0;
+        <div className="market-account-strip">
+          <Metric label="MT5 BALANCE" value={fmt(account.balance,2)} detail={`${connection?.account_currency||"USD"} · ${syncTime}`}/>
+          <Metric label="EQUITY" value={fmt(account.equity,2)} detail="Last bridge snapshot"/>
+          <Metric label="MARGIN" value={fmt(account.margin,2)} detail={`Free margin ${fmt(account.free_margin,2)}`}/>
+          <Metric label="CONNECTION" value={connected?"CONNECTED":"NOT CONNECTED"} detail={`Environment: ${environment.toUpperCase()}`}/>
+        </div>
 
-   const mergeCandles = (incoming) => { const normalized=incoming.map(c=>({time:Number(c.epoch),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)})).filter(c=>[c.time,c.open,c.high,c.low,c.close].every(Number.isFinite)).sort((a,b)=>a.time-b.time); if(!normalized.length)return; setCandles(prev=>{const map=new Map(prev.map(c=>[c.time,c]));normalized.forEach(c=>map.set(c.time,c));return Array.from(map.values()).sort((a,b)=>a.time-b.time).slice(-180)}); };
+        <LiveMarketPanel selectedSymbol={terminalSymbol} onSymbolChange={next=>{
+          const p=new URLSearchParams(params);
+          p.set("symbol",next);
+          setParams(p,{replace:true});
+        }} onPriceChange={()=>{}}/>
 
-   const loadServerHistory = async () => {
-     if(dead) return;
-     try {
-       const data=await invoke("market-data",{operation:"history",symbol,granularity:tf});
-       const raw=data?.candles||[];
-       if(raw.length){
-         setCandles(raw.map(c=>({time:Number(c.epoch),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)}))
-           .filter(c=>[c.time,c.open,c.high,c.low,c.close].every(Number.isFinite))
-           .sort((a,b)=>a.time-b.time).slice(-180));
-       }
-     }catch{}
-   };
+        <section className="vt-panel">
+          <div className="vt-section-title">
+            <div><h2>MT5 Connection</h2><p>Server/account telemetry supplied by the VELTRION MT5 bridge</p></div>
+            <span className="vt-ai-tag">{connected?"CONNECTED":"WAITING"}</span>
+          </div>
+          <div className="metric-grid">
+            <div className="metric-card"><span>Broker</span><strong>{connection?.broker||"—"}</strong><small>MT5 broker identity</small></div>
+            <div className="metric-card"><span>Server</span><strong>{connection?.server||"—"}</strong><small>Use the exact server shown in Deriv Trader's Hub</small></div>
+            <div className="metric-card"><span>Login</span><strong>{connection?.login||"—"}</strong><small>MT5 account login</small></div>
+            <div className="metric-card"><span>Last heartbeat</span><strong>{connection?.last_heartbeat_at?new Date(connection.last_heartbeat_at).toLocaleTimeString():"—"}</strong><small>{connection?.last_heartbeat_at||"No bridge heartbeat yet"}</small></div>
+          </div>
+          <div className="market-detail-note">
+            <strong>Execution boundary:</strong> Deriv documents that MT5 trading itself is not supported through its APIs; MT5 trading is performed in the official MT5 application/web terminal. VELTRION therefore stays read-only here and synchronizes account snapshots rather than pretending its Options API is an MT5 execution API.
+          </div>
+        </section>
 
-   const pollServerMarket=()=>{
-     if(dead||serverFallbackActive)return;
-     serverFallbackActive=true;
-     setFeed("CONNECTING_PUBLIC_MARKET");
-     const poll=async()=>{
-       if(dead||!serverFallbackActive)return;
-       try{
-         const t=await invoke("market-data",{operation:"tick",symbol});
-         const q=Number(t?.quote),epoch=Number(t?.epoch);
-         if(Number.isFinite(q)&&Number.isFinite(epoch)){
-           setFeed("LIVE_PUBLIC_MARKET");
-           setError("");
-           onTick({quote:q,epoch,pip_size:t?.pipSize??null});
-         }
-       }catch{}
-       if(!dead&&serverFallbackActive)serverTimer=setTimeout(poll,1000);
-     };
-     poll();
-   };
+        <div className="vt-lower-grid">
+          <section className="vt-panel">
+            <div className="vt-section-title"><div><h2>Open MT5 Positions</h2><p>Last bridge snapshot</p></div><span className="vt-ai-tag">READ ONLY</span></div>
+            {positions.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Ticket</th><th>Symbol</th><th>Type</th><th>Volume</th><th>Profit</th></tr></thead><tbody>{positions.map((p,i)=><tr key={String(p.ticket??p.position_id??i)}><td>{p.ticket??p.position_id??"—"}</td><td>{p.symbol??"—"}</td><td>{p.type??p.side??"—"}</td><td>{p.volume??p.quantity??"—"}</td><td>{fmt(p.profit??p.unrealized_pnl,2)}</td></tr>)}</tbody></table></div>:<div className="vt-empty">{connected?"No open MT5 positions in the latest snapshot.":"Connect the VELTRION MT5 bridge to display positions."}</div>}
+          </section>
 
-   const stopServerFallback=()=>{
-     serverFallbackActive=false;
-     clearTimeout(serverTimer);
-     serverTimer=null;
-   };
+          <section className="vt-panel">
+            <div className="vt-section-title"><div><h2>Orders & Deals</h2><p>Last synchronized MT5 records</p></div><span className="vt-ai-tag">{orders.length+deals.length}</span></div>
+            {orders.length||deals.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Type</th><th>Ticket</th><th>Symbol</th><th>Volume</th><th>Price</th></tr></thead><tbody>{[...orders.map(x=>({...x,__kind:"ORDER"})),...deals.map(x=>({...x,__kind:"DEAL"}))].slice(0,50).map((x,i)=><tr key={String(x.ticket??x.order??x.deal??i)+x.__kind}><td>{x.__kind}</td><td>{x.ticket??x.order??x.deal??"—"}</td><td>{x.symbol??"—"}</td><td>{x.volume??"—"}</td><td>{x.price??"—"}</td></tr>)}</tbody></table></div>:<div className="vt-empty">{connected?"No orders/deals in the latest snapshot.":"Connect the VELTRION MT5 bridge to display orders and deals."}</div>}
+          </section>
+        </div>
 
-   const scheduleReconnect=(delay=1000)=>{
-     if(dead)return;
-     clearTimeout(retryTimer);
-     retryTimer=setTimeout(()=>{if(!dead)connect()},delay);
-   };
+        <section className="vt-panel">
+          <div className="vt-section-title"><div><h2>Real Trading Gate</h2><p>Production execution remains deliberately locked</p></div><span className="vt-ai-tag">LOCKED</span></div>
+          <div className="market-detail-note">
+            VELTRION will not place a real MT5 order from this page. Your real MT5 account can be traded through the official Deriv MT5 terminal, while VELTRION can retain the private monitoring/reconciliation layer. This prevents the previous mismatch where the page called Deriv's Options trading API while presenting itself as an MT5 terminal.
+          </div>
+        </section>
 
-   const armTickWatchdog=()=>{
-     clearTimeout(tickWatchdogRef.current); clearTimeout(historyWatchdogRef.current);
-     tickWatchdogRef.current=setTimeout(()=>{
-       if(dead)return;
-       if(Date.now()-lastTickRef.current>7000){
-         setFeed("PUBLIC_MARKET_RECONNECTING");
-         try{ws?.close()}catch{}
-         if(!serverFallbackActive) pollServerMarket();
-         scheduleReconnect(Math.min(10000,1000*Math.max(1,reconnectAttempt)));
-       }
-     },8000);
-   };
-
-   const connect=()=>{
-     if(dead)return;
-     clearTimeout(connectTimeout);
-     try{
-       setFeed("CONNECTING_PUBLIC_MARKET");
-       ws=new WebSocket(DERIV_PUBLIC_HISTORY_ENDPOINTS[endpointIndex]);
-       let historyReceived=false;
-       historySocketRef.current=ws;
-       connectTimeout=setTimeout(()=>{
-         if(!dead&&Date.now()-lastTickRef.current>3000) pollServerMarket();
-       },3500);
-       ws.onopen=()=>{
-         if(dead){try{ws.close()}catch{};return}
-         setFeed("LIVE_PUBLIC_MARKET");
-         lastTickRef.current=Date.now();
-         reconnectAttempt=0;
-         armTickWatchdog();
-         ws.send(JSON.stringify({ticks_history:symbol,adjust_start_time:1,count:180,end:"latest",style:"candles",granularity:tf,req_id:7001}));
-         clearTimeout(historyWatchdogRef.current);
-         historyWatchdogRef.current=setTimeout(()=>{if(!dead&&!historyReceived)loadServerHistory()},4000);
-         ws.send(JSON.stringify({ticks:symbol,subscribe:1,req_id:91001}));
-         clearTimeout(connectTimeout);
-       };
-       ws.onmessage=e=>{
-         try{
-           const msg=JSON.parse(e.data);
-           if(msg.error){loadServerHistory();pollServerMarket();try{ws.close()}catch{};return}
-           if(msg.msg_type==="history"||msg.msg_type==="candles"){
-             const raw=msg.candles||msg.history?.candles||[];
-             if(raw.length){
-               setCandles(raw.map(c=>({time:Number(c.epoch),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)}))
-                 .filter(c=>[c.time,c.open,c.high,c.low,c.close].every(Number.isFinite))
-                 .sort((a,b)=>a.time-b.time).slice(-180));
-             } else {
-               loadServerHistory();
-             }
-           }
-           if(msg.msg_type==="tick"&&(msg.tick?.symbol===symbol||msg.tick?.underlying_symbol===symbol)){
-             lastTickRef.current=Date.now();
-             clearTimeout(connectTimeout);
-             stopServerFallback();
-             setFeed("LIVE_PUBLIC_MARKET");
-             setError("");
-             onTick(msg.tick);
-             armTickWatchdog();
-           }
-         }catch{}
-       };
-       ws.onerror=()=>{
-         if(dead)return;
-         setFeed("PUBLIC_MARKET_RECONNECTING");
-         loadServerHistory();
-         pollServerMarket();
-         reconnectAttempt=Math.min(reconnectAttempt+1,5);
-         scheduleReconnect(Math.min(10000,1000*2**Math.min(reconnectAttempt,3)));
-       };
-       ws.onclose=()=>{
-         clearTimeout(connectTimeout);
-         if(!dead){
-           // Keep the server relay alive while the browser socket reconnects.
-           // Previously this cleanup stopped the fallback immediately after the
-           // timeout handler started it, leaving the terminal permanently tickless.
-           endpointIndex=(endpointIndex+1)%DERIV_PUBLIC_HISTORY_ENDPOINTS.length;
-           setFeed("PUBLIC_MARKET_RECONNECTING");
-           if (!serverFallbackActive) pollServerMarket();
-           reconnectAttempt=Math.min(reconnectAttempt+1,5);
-           scheduleReconnect(Math.min(10000,1000*2**Math.min(reconnectAttempt,3)));
-         }
-       };
-     }catch{
-       endpointIndex=(endpointIndex+1)%DERIV_PUBLIC_HISTORY_ENDPOINTS.length;
-       setFeed("PUBLIC_MARKET_RECONNECTING");
-       retryTimer=setTimeout(connect,1000);
-     }
-   };
-
-   // Only reset market data when the user intentionally changes symbol/timeframe.
-   // Browser reconnects keep the last valid candles/ticks/price visible.
-   if(resetMarketData){
-     setCandles([]);
-     setTicks([]);
-     setPrice(null);
-   }
-   setFeed("CONNECTING_PUBLIC_MARKET");
-   // Prime historical OHLC immediately. The browser WebSocket remains responsible for live ticks,
-   // while the authenticated server relay guarantees candles are available even when browser WS
-   // transport is blocked or temporarily reconnecting.
-   loadServerHistory();
-   connect();
-
-   return()=>{
-     dead=true;
-     clearTimeout(retryTimer);
-     clearTimeout(connectTimeout);
-     stopServerFallback();
-     clearTimeout(tickWatchdogRef.current);
-     try{ws?.close()}catch{}
-     historySocketRef.current=null;
-   };
- },[symbol,tf]);
-
- const onTick=t=>{
-   const q=Number(t?.quote),epoch=Number(t?.epoch);
-   if(!Number.isFinite(q)||!Number.isFinite(epoch))return;
-   const tickKey=`${epoch}:${q}`;
-   if(seenTicksRef.current.has(tickKey))return;
-   seenTicksRef.current.add(tickKey);
-   if(seenTicksRef.current.size>200){const first=seenTicksRef.current.values().next().value;seenTicksRef.current.delete(first)}
-   setPrice(q);setFeed("LIVE");setTicks(a=>[{quote:q,epoch},...a.filter(x=>`${x.epoch}:${x.quote}`!==tickKey)].slice(0,40));
-   const activeTf=tfRef.current;
-   const bucket=Math.floor(epoch/activeTf)*activeTf;
-   setCandles(a=>{
-     const last=a[a.length-1];
-     if(!last||last.time<bucket)return [...a,{time:bucket,open:q,high:q,low:q,close:q}].slice(-180);
-     if(last.time>bucket)return a;
-     return [...a.slice(0,-1),{...last,high:Math.max(last.high,q),low:Math.min(last.low,q),close:q}];
-   });
- };
-
- const balance=Number(account?.balance?.balance ?? account?.balance ?? 0);
- const eq=Number(account?.balance?.equity ?? account?.equity ?? balance);
- const safeTime=lastSync?lastSync.toLocaleTimeString():"Not synchronized";
-
- return <div className="app-layout">
-  <Sidebar isOpen={side} onClose={()=>setSide(false)}/>
-  <div className="app-main"><header className="topbar"><button className="menu-button" onClick={()=>setSide(true)}>☰</button><span className="topbar-brand">VELTRION REAL ACCOUNT</span><span className="admin-badge real-badge">● READ ONLY</span></header>
-  <main className="content vt-page">
-   <header className="vt-heading"><div><span className="eyebrow real-eyebrow">PHASE 2 / DERIV REAL</span><h1>Real Account — Read Only</h1><p>Authenticated Deriv account, live market data, positions, orders/history and reconciliation. Temporary connection loss never clears the last valid account state.</p></div><div className="vt-header-actions"><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}><i/> {feed==="LIVE_REAL_MARKET"||feed==="LIVE"?"LIVE REAL MARKET DATA":feed}</span>{account?.stale&&<span className="vt-feed">LAST VERIFIED SNAPSHOT</span>}</div></header>
-   {error&&<div className="market-detail-note">Connection warning: {error} · Retaining last valid data and retrying automatically.</div>}
-   <div className="market-account-strip"><div className="market-account-card"><span>REAL BALANCE</span><strong>{account?.currency||"USD"} {fmt(balance,2)}</strong><small>{account?.loginid||account?.login||"Real account"} · synced {safeTime}</small></div><div className="market-account-card"><span>EQUITY</span><strong>{account?.currency||"USD"} {fmt(eq,2)}</strong><small>Server-reconciled</small></div><div className="market-account-card market-account-state"><span>PORTFOLIO SYNC</span><strong>{syncStatus}</strong><small>{syncOpen} open positions · {syncClosed} closed records synced</small></div></div>
-   <LiveMarketPanel selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={()=>{}}/>
-   <section className="vt-panel vt-chart-panel"><div className="vt-panel-head"><div><h2>{symbol} Live Chart</h2><p>Deriv OHLC history + current tick stream</p></div><div className="vt-timeframes">{TIMEFRAMES.map(x=><button key={x.seconds} className={tf===x.seconds?"active":""} onClick={()=>setTf(x.seconds)}>{x.label}</button>)}</div></div><Chart candles={candles} price={price} symbol={symbol}/></section>
-   <section className="vt-panel vt-tick-tape"><div className="vt-section-title"><div><h2>Live Tick Tape</h2><p>Real-time quotes for the selected market</p></div><span className="vt-ai-tag">{ticks.length} TICKS</span></div><div className="vt-tick-grid">{ticks.slice(0,20).map((t,i)=><div className="vt-tick-row" key={t.epoch+"-"+i}><span>{new Date(t.epoch*1000).toLocaleTimeString()}</span><strong>{fmt(t.quote,8)}</strong><small>{i===0?"LATEST":"TICK"}</small></div>)}</div>{!ticks.length&&<div className="vt-empty">Waiting for live ticks…</div>}</section>
-   <section className="vt-panel"><div className="vt-section-title"><div><h2>Open Real Positions</h2><p>Authenticated Deriv portfolio</p></div><span className="vt-ai-tag">READ ONLY</span></div>{portfolio.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Contract</th><th>Market</th><th>Buy</th><th>Current</th><th>P/L</th></tr></thead><tbody>{portfolio.map(p=><tr key={p.contract_id||p.id}><td>{p.external_position_id||"—"}</td><td>{p.symbol||"—"}</td><td>{p.entry_price??"—"}</td><td>{p.current_price??"—"}</td><td className={Number(p.unrealized_pnl)>=0?"vt-positive":"vt-negative"}>{p.unrealized_pnl??"—"}</td></tr>)}</tbody></table></div>:<div className="vt-empty">No open real positions returned by Deriv.</div>}</section>
-   <div className="vt-lower-grid">
-    <section className="vt-panel"><div className="vt-section-title"><div><h2>Closed Orders / Profit History</h2><p>Server-reconciled Deriv profit table</p></div></div>{history.length?<div className="vt-table-wrap"><table className="vt-table"><thead><tr><th>Contract</th><th>Market</th><th>Buy</th><th>Sell</th><th>P/L</th></tr></thead><tbody>{history.slice(0,50).map((p,i)=><tr key={(p.contract_id||p.id||"h")+"-"+i}><td>{p.contract_id||p.id||"—"}</td><td>{p.underlying_symbol||p.symbol||"—"}</td><td>{p.buy_price??"—"}</td><td>{p.sell_price??"—"}</td><td className={Number(p.profit)>=0?"vt-positive":"vt-negative"}>{p.profit??"—"}</td></tr>)}</tbody></table></div>:<div className="vt-empty">No closed real trades returned by Deriv.</div>}</section>
-    <section className="vt-panel"><div className="vt-section-title"><div><h2>Account Statements</h2><p>Read-only reconciliation trail</p></div></div>{statements.length?<div className="vt-data-list">{statements.slice(0,30).map((s,i)=><div className="audit-row" key={(s.transaction_id||s.id||"s")+"-"+i}><span>{s.action||s.description||s.type||"Transaction"}</span><b>{s.amount??s.balance??"—"}</b></div>)}</div>:<div className="vt-empty">No statement transactions returned.</div>}</section>
-   </div>
-   <div className="market-detail-note">REAL ACCOUNT — READ ONLY · OAuth/server verification stays active · browser has no Deriv private credentials · real execution, transfers and withdrawals remain locked.</div>
-  </main></div></div>;
+        <footer className="vt-footer">REAL MT5 ACCOUNT — READ ONLY · No MT5 password is stored in the browser · Account data comes from the private bridge · Real execution remains in the official Deriv MT5 terminal.</footer>
+      </main>
+    </div>
+  </div>;
 }
