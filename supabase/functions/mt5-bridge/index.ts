@@ -16,9 +16,15 @@ Deno.serve(async req=>{
  try{
   if(req.method==="GET"&&(path.endsWith("/status")||path.endsWith("/snapshot")||path.endsWith("/mt5-bridge")||path.endsWith("/functions/v1/mt5-bridge"))){
    const user=await userFromJwt(req);if(!user)return json({ok:false,error:"Authentication required"},401);
-   const {data,error}=await db.from("mt5_connections").select("id,user_id,broker,server,login,account_currency,environment,status,last_heartbeat_at,metadata,updated_at").eq("user_id",user.id).order("last_heartbeat_at",{ascending:false}).limit(1).maybeSingle();if(error)throw error;
-   const hb=data?.last_heartbeat_at?Date.parse(data.last_heartbeat_at):0,connected=!!data&&data.status==="connected"&&hb>Date.now()-45000;
-   return json({ok:true,status:connected?"connected":data?"stale":"not_connected",snapshot:data?{...data,status:connected?"connected":"stale"}:null,capabilities:{account_snapshot:true,positions_snapshot:true,orders_snapshot:true,trade_history_snapshot:true,real_mt5_execution:false,reason:"Read-only MT5 telemetry. Real trading remains in the official Deriv MT5 terminal."}});
+   const {data:connections,error}=await db.from("mt5_connections").select("id,user_id,broker,server,login,account_currency,environment,status,last_heartbeat_at,metadata,updated_at").eq("user_id",user.id).order("last_heartbeat_at",{ascending:false});if(error)throw error;
+   const latestByEnv={};for(const row of connections||[]){const env=String(row.environment||"real").toLowerCase();if(!latestByEnv[env])latestByEnv[env]=row;}
+   const ids=(connections||[]).map(x=>x.id);
+   const {data:accounts,error:accountsError}=ids.length?await db.from("mt5_accounts").select("id,connection_id,account_number,currency,balance,equity,margin,free_margin,observed_at,raw").in("connection_id",ids).order("observed_at",{ascending:false}):{data:[],error:null};
+   if(accountsError)throw accountsError;
+   const accountByConnection={};for(const account of accounts||[]){if(!accountByConnection[account.connection_id])accountByConnection[account.connection_id]=account;}
+   const snapshots=Object.fromEntries(Object.entries(latestByEnv).map(([env,row])=>{const hb=row.last_heartbeat_at?Date.parse(row.last_heartbeat_at):0;const status=row.status==="connected"&&hb>Date.now()-45000?"connected":row.status==="connected"?"stale":row.status;return [env,{...row,status}];}));
+   const current=snapshots.real||snapshots.sandbox||null;
+   return json({ok:true,status:current?.status||"not_connected",snapshot:current,connections:snapshots,accounts:accountByConnection,capabilities:{account_snapshot:true,positions_snapshot:true,orders_snapshot:true,trade_history_snapshot:true,real_mt5_execution:false,reason:"Read-only MT5 telemetry. Real trading remains in the official Deriv MT5 terminal."}});
   }
   if(req.method==="POST"&&path.endsWith("/heartbeat")){
    if(!bridgeAuthorized(req))return json({ok:false,error:"Bridge authentication required"},401);
