@@ -34,11 +34,29 @@ export default function Wallet() {
         .eq("user_id", user.id)
         .maybeSingle();
       if (accountError) throw accountError;
-      const { data: sandboxRows, error: sandboxError } = await supabase
-        .from("sandbox_trades")
-        .select("realized_pnl");
-      if (sandboxError) throw sandboxError;
-      const sandboxProfit = (sandboxRows || []).reduce((sum, row) => sum + Number(row.realized_pnl || 0), 0);
+      const { data: sandboxAccount, error: sandboxAccountError } = await supabase
+        .from("sandbox_accounts")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .eq("sandbox_type", "demo")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (sandboxAccountError) throw sandboxAccountError;
+
+      let sandboxRows = [];
+      if (sandboxAccount?.id) {
+        const { data, error: sandboxError } = await supabase
+          .from("sandbox_orders")
+          .select("realized_pnl")
+          .eq("sandbox_account_id", sandboxAccount.id)
+          .eq("status", "closed")
+          .not("realized_pnl", "is", null);
+        if (sandboxError) throw sandboxError;
+        sandboxRows = data || [];
+      }
+      const sandboxProfit = sandboxRows.reduce((sum, row) => sum + Number(row.realized_pnl || 0), 0);
 
       if (!account) {
         setState({ loading: false, error: "", account: null, wallet: null, withdrawals: [], sandboxProfit, sandboxTrades: (sandboxRows || []).length });
@@ -152,7 +170,7 @@ export default function Wallet() {
         <div>
           <div className="vel-eyebrow">VELTRION / WALLET</div>
           <h1>Profit Wallet</h1>
-          <p>Tracks verified real-trading profits and controlled withdrawals. Sandbox results are displayed separately and are not treated as withdrawable funds.</p>
+          <p>Tracks verified real-trading profits and controlled withdrawals. Live-market sandbox trading is shown separately as virtual realized profit and is never treated as real cash or withdrawable funds.</p>
         </div>
         <span className="vel-data-source">REAL ACCOUNT + PROFIT WALLET · READ ONLY</span>
       </div>
@@ -175,9 +193,9 @@ export default function Wallet() {
         <>
           <div className="metric-grid wallet-metrics">
           <div className="metric-card">
-            <small>SANDBOX REALIZED PROFIT</small>
+            <small>LIVE-MARKET SANDBOX REALIZED PROFIT</small>
             <strong>{money(state.sandboxProfit)}</strong>
-            <span>{state.sandboxTrades} simulated trades · not withdrawable</span>
+            <span>{state.sandboxTrades} closed sandbox trades · virtual profit, not withdrawable</span>
           </div>
 
             <div className="metric-card">
