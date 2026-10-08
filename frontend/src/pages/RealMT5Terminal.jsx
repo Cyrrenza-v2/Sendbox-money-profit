@@ -47,7 +47,7 @@ export default function RealMT5Terminal(){
   const [lastSync,setLastSync]=useState(null);
   const [loading,setLoading]=useState(true);
   const [channels,setChannels]=useState({});
-  const [derivAccounts,setDerivAccounts]=useState([]);
+  const [derivAccounts,setDerivAccounts]=useState([]);\n  const [demoVolume,setDemoVolume]=useState("0.01");\n  const [demoMessage,setDemoMessage]=useState("");\n  const [demoBusy,setDemoBusy]=useState(false);
 
   const refresh=async()=>{
     try{
@@ -92,7 +92,7 @@ export default function RealMT5Terminal(){
   const syncTime=lastSync?lastSync.toLocaleTimeString():"Not synchronized";
   const terminalSymbol=useMemo(()=>symbol,[symbol]);
 
-  const openOfficialMt5=()=>window.open(DERIV_MT5_WEB,"_blank","noopener,noreferrer");
+  const openOfficialMt5=()=>window.open(DERIV_MT5_WEB,"_blank","noopener,noreferrer");\n  const submitDemoOrder=async(nextSide)=>{\n    if(!demoConnection?.id){setDemoMessage("Connect a DEMO MT5 bridge first.");return}\n    const volume=Number(demoVolume);\n    if(!Number.isFinite(volume)||volume<=0){setDemoMessage("Enter a valid demo volume.");return}\n    setDemoBusy(true);setDemoMessage("");\n    try{\n      const {data,error}=await supabase.functions.invoke("mt5-command",{method:"POST",body:{connection_id:demoConnection.id,symbol:terminalSymbol,side:nextSide,volume,client_order_id:crypto.randomUUID()}});\n      if(error)throw error;\n      setDemoMessage(data?.ok?"Demo order queued for MT5 execution.":"Demo order was not accepted.");\n      await refresh();\n    }catch(e){setDemoMessage(e?.message||"MT5 demo command failed.");}\n    finally{setDemoBusy(false)}\n  };\n\n
 
   return <div className="app-layout">
     <Sidebar isOpen={side} onClose={()=>setSide(false)}/>
@@ -196,7 +196,7 @@ export default function RealMT5Terminal(){
           </div>
         </section>
 
-        <footer className="vt-footer">REAL MT5 ACCOUNT — READ ONLY · No MT5 password is stored in the browser · Account data comes from the private bridge · Real execution remains in the official Deriv MT5 terminal.</footer>
+        <section className="vt-panel">\n          <div className="vt-section-title"><div><h2>VELTRION Demo Execution</h2><p>Command bridge test — demo MT5 only</p></div><span className="vt-ai-tag">SANDBOX</span></div>\n          <div className="market-detail-note"><strong>Safety gate:</strong> this panel can only queue commands for a connected sandbox/demo MT5 bridge. Real-account execution is rejected by both the Edge Function and the EA. Never enter your MT5 password here.</div>\n          <div className="metric-grid">\n            <div className="metric-card"><span>SYMBOL</span><strong>{terminalSymbol}</strong><small>Current terminal symbol</small></div>\n            <div className="metric-card"><span>VOLUME</span><input value={demoVolume} onChange={e=>setDemoVolume(e.target.value)} inputMode="decimal" className="terminal-input" aria-label="Demo volume"/></div>\n            <div className="metric-card"><span>DEMO BRIDGE</span><strong>{demoConnected?"CONNECTED":"NOT CONNECTED"}</strong><small>{demoConnection?.login||"Waiting for demo heartbeat"}</small></div>\n            <div className="metric-card"><span>REAL EXECUTION</span><strong>LOCKED</strong><small>Production gate remains closed</small></div>\n          </div>\n          <div className="vt-header-actions">\n            <button className="market-open-terminal" disabled={demoBusy||!demoConnected} onClick={()=>submitDemoOrder("SELL")}>SELL / DEMO</button>\n            <button className="market-open-terminal" disabled={demoBusy||!demoConnected} onClick={()=>submitDemoOrder("BUY")}>BUY / DEMO</button>\n          </div>\n          {demoMessage&&<div className="market-detail-note">{demoMessage}</div>}\n        </section>\n        <footer className="vt-footer">REAL MT5 ACCOUNT — READ ONLY · No MT5 password is stored in the browser · Account data comes from the private bridge · Real execution remains in the official Deriv MT5 terminal.</footer>
       </main>
     </div>
   </div>;
