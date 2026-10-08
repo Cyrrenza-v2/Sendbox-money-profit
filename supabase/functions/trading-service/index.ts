@@ -897,6 +897,36 @@ async function handle(userId: string, body: any) {
     return await reconcileRealState(userId, balance.balance, profit.profit_table);
   }
 
+  if (op === "proposal") {
+    if (PRODUCTION_READ_ONLY_FREEZE) throw new Error("PRODUCTION_READ_ONLY_FREEZE");
+    await tradingGate(userId);
+    const symbol = String(body.symbol || "").trim();
+    const side = String(body.side || "").toUpperCase();
+    const stake = Number(body.stake);
+    const duration = Number(body.duration ?? 5);
+    const durationUnit = String(body.duration_unit || "m");
+    if (!symbol) throw new Error("MARKET_SYMBOL_REQUIRED");
+    if (!["BUY","SELL"].includes(side)) throw new Error("INVALID_SIDE");
+    if (!Number.isFinite(stake) || stake <= 0) throw new Error("INVALID_STAKE");
+    if (!Number.isInteger(duration) || duration <= 0) throw new Error("INVALID_DURATION");
+    if (!["s","m","h","d","t"].includes(durationUnit)) throw new Error("INVALID_DURATION_UNIT");
+    const { account } = await realContext(userId);
+    const balanceResponse = await realWsCall(userId, { balance: 1 }, "balance");
+    const balance = Number(balanceResponse?.balance?.balance);
+    if (!Number.isFinite(balance) || balance < stake) throw new Error("REAL_BROKER_FUNDS_INSUFFICIENT");
+    const contractType = side === "BUY" ? "CALL" : "PUT";
+    return realWsCall(userId, {
+      proposal: 1,
+      amount: stake,
+      basis: "stake",
+      contract_type: contractType,
+      currency: String(account.currency || "USD").toUpperCase(),
+      duration,
+      duration_unit: durationUnit,
+      underlying_symbol: symbol
+    }, "proposal");
+  }
+
   if (op === "contract_status") {
     if (!body.contract_id) throw new Error("CONTRACT_ID_REQUIRED");
     return realWsCall(userId, {
