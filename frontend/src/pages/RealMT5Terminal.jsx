@@ -47,7 +47,10 @@ export default function RealMT5Terminal(){
   const [lastSync,setLastSync]=useState(null);
   const [loading,setLoading]=useState(true);
   const [channels,setChannels]=useState({});
-  const [derivAccounts,setDerivAccounts]=useState([]);\n  const [demoVolume,setDemoVolume]=useState("0.01");\n  const [demoMessage,setDemoMessage]=useState("");\n  const [demoBusy,setDemoBusy]=useState(false);
+  const [derivAccounts,setDerivAccounts]=useState([]);
+  const [demoVolume,setDemoVolume]=useState("0.01");
+  const [demoMessage,setDemoMessage]=useState("");
+  const [demoBusy,setDemoBusy]=useState(false);
 
   const refresh=async()=>{
     try{
@@ -92,7 +95,22 @@ export default function RealMT5Terminal(){
   const syncTime=lastSync?lastSync.toLocaleTimeString():"Not synchronized";
   const terminalSymbol=useMemo(()=>symbol,[symbol]);
 
-  const openOfficialMt5=()=>window.open(DERIV_MT5_WEB,"_blank","noopener,noreferrer");\n  const submitDemoOrder=async(nextSide)=>{\n    if(!demoConnection?.id){setDemoMessage("Connect a DEMO MT5 bridge first.");return}\n    const volume=Number(demoVolume);\n    if(!Number.isFinite(volume)||volume<=0){setDemoMessage("Enter a valid demo volume.");return}\n    setDemoBusy(true);setDemoMessage("");\n    try{\n      const {data,error}=await supabase.functions.invoke("mt5-command",{method:"POST",body:{connection_id:demoConnection.id,symbol:terminalSymbol,side:nextSide,volume,client_order_id:crypto.randomUUID()}});\n      if(error)throw error;\n      setDemoMessage(data?.ok?"Demo order queued for MT5 execution.":"Demo order was not accepted.");\n      await refresh();\n    }catch(e){setDemoMessage(e?.message||"MT5 demo command failed.");}\n    finally{setDemoBusy(false)}\n  };\n\n
+  const openOfficialMt5=()=>window.open(DERIV_MT5_WEB,"_blank","noopener,noreferrer");
+  const submitDemoOrder=async(nextSide)=>{
+    if(!demoConnection?.id){setDemoMessage("Connect a DEMO MT5 bridge first.");return}
+    const volume=Number(demoVolume);
+    if(!Number.isFinite(volume)||volume<=0){setDemoMessage("Enter a valid demo volume.");return}
+    setDemoBusy(true);setDemoMessage("");
+    try{
+      const {data,error}=await supabase.functions.invoke("mt5-command",{method:"POST",body:{connection_id:demoConnection.id,symbol:terminalSymbol,side:nextSide,volume,client_order_id:crypto.randomUUID()}});
+      if(error)throw error;
+      setDemoMessage(data?.ok?"Demo order queued for MT5 execution.":"Demo order was not accepted.");
+      await refresh();
+    }catch(e){setDemoMessage(e?.message||"MT5 demo command failed.");}
+    finally{setDemoBusy(false)}
+  };
+
+
 
   return <div className="app-layout">
     <Sidebar isOpen={side} onClose={()=>setSide(false)}/>
@@ -189,14 +207,36 @@ export default function RealMT5Terminal(){
           </section>
         </div>
 
-        <section className="vt-panel">\n          <div className="vt-section-title"><div><h2>MT5 Account Channels</h2><p>Separate telemetry for the Deriv demo and real MT5 accounts</p></div><span className="vt-ai-tag">READ ONLY</span></div>\n          <div className="metric-grid">\n            {["sandbox","real"].map(env=>{const c=channels[env];const m=c?.metadata||{};const fresh=c?.last_heartbeat_at&&Date.parse(c.last_heartbeat_at)>Date.now()-45000;return <div className="metric-card" key={env}><span>{env==="sandbox"?"DEMO":"REAL"} MT5</span><strong>{c?(fresh?"CONNECTED":"STALE"):"NOT CONNECTED"}</strong><small>{c?((c.broker||"MT5")+" · "+(c.server||"—")+" · login "+(c.login||"—")+" · balance "+fmt(m.balance,2)+" "+(c.account_currency||"USD")):"Waiting for an authenticated MT5 bridge heartbeat"}</small></div>})}\n          </div>\n          <div className="market-detail-note"><strong>Recording:</strong> each authenticated MT5 heartbeat is stored as a connection snapshot, heartbeat record, account snapshot, sync event, and integration event. No synthetic trade records are created.</div>\n        </section>\n        <section className="vt-panel">
+        <section className="vt-panel">
+          <div className="vt-section-title"><div><h2>MT5 Account Channels</h2><p>Separate telemetry for the Deriv demo and real MT5 accounts</p></div><span className="vt-ai-tag">READ ONLY</span></div>
+          <div className="metric-grid">
+            {["sandbox","real"].map(env=>{const c=channels[env];const m=c?.metadata||{};const fresh=c?.last_heartbeat_at&&Date.parse(c.last_heartbeat_at)>Date.now()-45000;return <div className="metric-card" key={env}><span>{env==="sandbox"?"DEMO":"REAL"} MT5</span><strong>{c?(fresh?"CONNECTED":"STALE"):"NOT CONNECTED"}</strong><small>{c?((c.broker||"MT5")+" · "+(c.server||"—")+" · login "+(c.login||"—")+" · balance "+fmt(m.balance,2)+" "+(c.account_currency||"USD")):"Waiting for an authenticated MT5 bridge heartbeat"}</small></div>})}
+          </div>
+          <div className="market-detail-note"><strong>Recording:</strong> each authenticated MT5 heartbeat is stored as a connection snapshot, heartbeat record, account snapshot, sync event, and integration event. No synthetic trade records are created.</div>
+        </section>
+        <section className="vt-panel">
           <div className="vt-section-title"><div><h2>Real Trading Gate</h2><p>Production execution remains deliberately locked</p></div><span className="vt-ai-tag">LOCKED</span></div>
           <div className="market-detail-note">
             VELTRION will not place a real MT5 order from this page. Your real MT5 account can be traded through the official Deriv MT5 terminal, while VELTRION can retain the private monitoring/reconciliation layer. This prevents the previous mismatch where the page called Deriv's Options trading API while presenting itself as an MT5 terminal.
           </div>
         </section>
 
-        <section className="vt-panel">\n          <div className="vt-section-title"><div><h2>VELTRION Demo Execution</h2><p>Command bridge test — demo MT5 only</p></div><span className="vt-ai-tag">SANDBOX</span></div>\n          <div className="market-detail-note"><strong>Safety gate:</strong> this panel can only queue commands for a connected sandbox/demo MT5 bridge. Real-account execution is rejected by both the Edge Function and the EA. Never enter your MT5 password here.</div>\n          <div className="metric-grid">\n            <div className="metric-card"><span>SYMBOL</span><strong>{terminalSymbol}</strong><small>Current terminal symbol</small></div>\n            <div className="metric-card"><span>VOLUME</span><input value={demoVolume} onChange={e=>setDemoVolume(e.target.value)} inputMode="decimal" className="terminal-input" aria-label="Demo volume"/></div>\n            <div className="metric-card"><span>DEMO BRIDGE</span><strong>{demoConnected?"CONNECTED":"NOT CONNECTED"}</strong><small>{demoConnection?.login||"Waiting for demo heartbeat"}</small></div>\n            <div className="metric-card"><span>REAL EXECUTION</span><strong>LOCKED</strong><small>Production gate remains closed</small></div>\n          </div>\n          <div className="vt-header-actions">\n            <button className="market-open-terminal" disabled={demoBusy||!demoConnected} onClick={()=>submitDemoOrder("SELL")}>SELL / DEMO</button>\n            <button className="market-open-terminal" disabled={demoBusy||!demoConnected} onClick={()=>submitDemoOrder("BUY")}>BUY / DEMO</button>\n          </div>\n          {demoMessage&&<div className="market-detail-note">{demoMessage}</div>}\n        </section>\n        <footer className="vt-footer">REAL MT5 ACCOUNT — READ ONLY · No MT5 password is stored in the browser · Account data comes from the private bridge · Real execution remains in the official Deriv MT5 terminal.</footer>
+        <section className="vt-panel">
+          <div className="vt-section-title"><div><h2>VELTRION Demo Execution</h2><p>Command bridge test — demo MT5 only</p></div><span className="vt-ai-tag">SANDBOX</span></div>
+          <div className="market-detail-note"><strong>Safety gate:</strong> this panel can only queue commands for a connected sandbox/demo MT5 bridge. Real-account execution is rejected by both the Edge Function and the EA. Never enter your MT5 password here.</div>
+          <div className="metric-grid">
+            <div className="metric-card"><span>SYMBOL</span><strong>{terminalSymbol}</strong><small>Current terminal symbol</small></div>
+            <div className="metric-card"><span>VOLUME</span><input value={demoVolume} onChange={e=>setDemoVolume(e.target.value)} inputMode="decimal" className="terminal-input" aria-label="Demo volume"/></div>
+            <div className="metric-card"><span>DEMO BRIDGE</span><strong>{demoConnected?"CONNECTED":"NOT CONNECTED"}</strong><small>{demoConnection?.login||"Waiting for demo heartbeat"}</small></div>
+            <div className="metric-card"><span>REAL EXECUTION</span><strong>LOCKED</strong><small>Production gate remains closed</small></div>
+          </div>
+          <div className="vt-header-actions">
+            <button className="market-open-terminal" disabled={demoBusy||!demoConnected} onClick={()=>submitDemoOrder("SELL")}>SELL / DEMO</button>
+            <button className="market-open-terminal" disabled={demoBusy||!demoConnected} onClick={()=>submitDemoOrder("BUY")}>BUY / DEMO</button>
+          </div>
+          {demoMessage&&<div className="market-detail-note">{demoMessage}</div>}
+        </section>
+        <footer className="vt-footer">REAL MT5 ACCOUNT — READ ONLY · No MT5 password is stored in the browser · Account data comes from the private bridge · Real execution remains in the official Deriv MT5 terminal.</footer>
       </main>
     </div>
   </div>;
