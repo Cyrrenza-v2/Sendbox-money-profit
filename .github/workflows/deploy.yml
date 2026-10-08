@@ -101,3 +101,5 @@ jobs:
 # MT5 bridge gateway-auth fix: heartbeat endpoint uses custom bridge auth with handler-level validation.
 
 # OAuth + Deriv API + official MT5 handoff verification checkpoint: 2026-10-08.
+
+# Automated Pages verification checkpoint: 2026-10-08.
