@@ -48,6 +48,7 @@ export default function TradingTerminal() {
   useEffect(()=>{const requested=searchParams.get("symbol");if(requested)setSymbol(requested);},[searchParams]);
   useEffect(()=>{timeframeRef.current=timeframe;},[timeframe]);
 
+  const invokeRealPipeline=async(body)=>{ const {data,error}=await supabase.functions.invoke("sendbox-real-pipeline",{method:"POST",body}); if(error)throw error; if(data?.ok===false||data?.error)throw new Error(data.error||"SENDbox_REAL_PIPELINE_FAILED"); return data?.data??data; };
   const invokeTrading=async(body)=>{
     const {data,error}=await supabase.functions.invoke("trading-service",{method:"POST",body});
     if(error) throw error;
@@ -170,12 +171,12 @@ export default function TradingTerminal() {
         setNotice(`Sandbox ${side} order submitted for ${symbolName}.`);
       }else{
         setRealBusy(true);
-        const proposal=await invokeTrading({operation:"proposal",symbol,side,stake:size,duration:5,duration_unit:"m"});
-        const proposalId=proposal?.proposal?.id??proposal?.id;
-        const maxPrice=Number(proposal?.proposal?.ask_price??proposal?.ask_price??tick.price);
-        if(!proposalId) throw new Error("REAL_PROPOSAL_UNAVAILABLE");
-        await invokeTrading({operation:"buy",proposal_id:proposalId,price:Number.isFinite(maxPrice)&&maxPrice>0?maxPrice:tick.price,stake:size,symbol,client_order_id:crypto.randomUUID()});
-        setNotice(`Real ${side} order submitted for ${symbolName}; broker state is being reconciled.`);
+        const sandboxSnap=await sandboxEngine.snapshot();
+        const sandboxOrders=sandboxSnap?.data?.orders||[];
+        const selectedOrder=[...sandboxOrders].reverse().find(o=>o.symbol===symbol&&String(o.status||"").toUpperCase()==="OPEN");
+        if(!selectedOrder) throw new Error("SENDbox_AUTHORIZATION_ORDER_REQUIRED: create a sandbox order first so the real pipeline can authorize its exact order.");
+        const result=await invokeRealPipeline({operation:"execute",sandbox_order_id:selectedOrder.id,side,symbol,stake:size,client_order_id:`sendbox-real:${selectedOrder.id}`});
+        setNotice(`Real pipeline response received. Broker confirmation: ${result?.contract_id||result?.contract?.contract_id||"pending reconciliation"}.`);
       }
       await refresh();setActiveTab("positions");
     }catch(e){setError(e.message||"Order failed.");}
@@ -189,8 +190,9 @@ export default function TradingTerminal() {
       if(mode==="demo"){
         await sandboxEngine.closePosition({position_id:p.id,exit_price:current.price,idempotency_key:crypto.randomUUID()});setNotice("Sandbox position closed.");
       }else{
-        await invokeTrading({operation:"sell",contract_id:p.contract_id,price:current.price});
-        setNotice("Real contract close request submitted; broker state will be reconciled.");
+        await invokeRealPipeline({operation:"close",contract_id:p.contract_id});
+        await invokeRealPipeline({operation:"reconcile",contract_id:p.contract_id});
+        setNotice("Real contract close and broker P&L reconciliation requested.");
       }
       await refresh();
     }
