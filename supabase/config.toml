@@ -7,4 +7,5 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.mt5-bridge]
-verify_jwt = true
+# MT5 heartbeat uses its own bridge credential; the handler still validates Supabase JWTs for user-facing GET/pairing routes.
+verify_jwt = false
