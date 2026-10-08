@@ -136,22 +136,35 @@ export default function TradingTerminal() {
     setError("");setNotice("");
     const size=Number(quantity),sl=stopLoss.trim()===""?null:Number(stopLoss),tp=takeProfit.trim()===""?null:Number(takeProfit);
     if(!tick)return setError("Waiting for a verified live price.");
-    if(!account)return setError("No authenticated sandbox trading account was found.");
+    if(!account)return setError("No authenticated trading account was found.");
     if(!Number.isFinite(size)||size<=0)return setError("Enter a position size greater than zero.");
     if(sl!==null&&(!Number.isFinite(sl)||sl<=0))return setError("Stop loss must be a positive price.");
     if(tp!==null&&(!Number.isFinite(tp)||tp<=0))return setError("Take profit must be a positive price.");
     if(sl!==null&&((side==="BUY"&&sl>=tick.price)||(side==="SELL"&&sl<=tick.price)))return setError("Stop loss must be below the current price for Buy and above it for Sell.");
     if(tp!==null&&((side==="BUY"&&tp<=tick.price)||(side==="SELL"&&tp>=tick.price)))return setError("Take profit must be above the current price for Buy and below it for Sell.");
-    const confirmed=window.confirm(`Confirm ${mode==="real"?"REAL":"SANDBOX"} ${side} order\nMarket: ${symbolName} (${symbol})\nSize: ${size}\nObserved price: ${fmt(tick.price,8)}\nStop loss: ${sl??"not set"}\nTake profit: ${tp??"not set"}\n\n${mode==="real"?"This sends an order to the authenticated real Deriv account if all production safety gates and real broker funds permit it.":"This is a virtual order only. No real broker order will be sent."}``);
+    const confirmed=window.confirm(`Confirm ${mode==="real"?"REAL":"SANDBOX"} ${side} order\\nMarket: ${symbolName} (${symbol})\\nSize: ${size}\\nObserved price: ${fmt(tick.price,8)}\\nStop loss: ${sl??"not set"}\\nTake profit: ${tp??"not set"}\\n\\n${mode==="real"?"This sends an order to the authenticated real Deriv account only if server-side production gates and actual broker funds permit it.":"This is a virtual order only. No real broker order will be sent."}`);
     if(!confirmed)return;
-    setBusy(true);
-    try{await sandboxEngine.executeOrder({account_id:account.id,symbol,side,quantity:size,price:tick.price,stop_loss:sl,take_profit:tp,idempotency_key:crypto.randomUUID()});setNotice(`Sandbox ${side} order submitted for ${symbolName}.`);await refresh();setActiveTab("positions");}
-    catch(e){setError(e.message||"Sandbox order failed.");}
-    finally{setBusy(false);}
+    setBusy(true);setError("");
+    try{
+      if(mode==="demo"){
+        await sandboxEngine.executeOrder({account_id:account.id,symbol,side,quantity:size,price:tick.price,stop_loss:sl,take_profit:tp,idempotency_key:crypto.randomUUID()});
+        setNotice(`Sandbox ${side} order submitted for ${symbolName}.`);
+      }else{
+        setRealBusy(true);
+        const proposal=await invokeTrading({operation:"proposal",symbol,side,stake:size,duration:5,duration_unit:"m"});
+        const proposalId=proposal?.proposal?.id??proposal?.id;
+        const maxPrice=Number(proposal?.proposal?.ask_price??proposal?.ask_price??tick.price);
+        if(!proposalId) throw new Error("REAL_PROPOSAL_UNAVAILABLE");
+        await invokeTrading({operation:"buy",proposal_id:proposalId,price:Number.isFinite(maxPrice)&&maxPrice>0?maxPrice:tick.price,stake:size,symbol,client_order_id:crypto.randomUUID()});
+        setNotice(`Real ${side} order submitted for ${symbolName}; broker state is being reconciled.`);
+      }
+      await refresh();setActiveTab("positions");
+    }catch(e){setError(e.message||"Order failed.");}
+    finally{setBusy(false);setRealBusy(false);}
   };
   const close=async p=>{
     const current=priceRef.current;if(!current)return setError("Waiting for the current market price before closing.");
-    if(!window.confirm(`Close sandbox position ${p.symbol} ${p.side} at observed price ${fmt(current.price,8)}?`))return;
+    if(!window.confirm(`Close ${mode==="real"?"real":"sandbox"} position ${p.symbol} ${p.side} at observed price ${fmt(current.price,8)}?`))return;
     setBusy(true);setError("");setNotice("");
     try{
       if(mode==="demo"){
@@ -168,7 +181,7 @@ export default function TradingTerminal() {
   return <div className="vt-page">
     <header className="vt-heading"><div><span className="eyebrow">VELTRION / TRADING WORKSPACE</span><h1>{symbolName} <span className="vt-symbol-code">{symbol}</span></h1><p>Market Watch · live chart · order ticket · positions. Demo and Real are isolated execution environments.</p></div><div className="vt-header-actions"><span className={feed==="LIVE"?"vt-feed live":"vt-feed"}><i/> {feed==="LIVE"?"LIVE MARKET DATA":feed}</span><span className="vt-mode-chip">{mode==="real"?"REAL LIVE":"DEMO SANDBOX"}</span>
           <button className="vt-ai-button" onClick={()=>{const next=mode==="real"?"demo":"real";setMode(next);navigate(`/app/trading/terminal?mode=${next}&symbol=${encodeURIComponent(symbol)}`);}}>{mode==="real"?"SWITCH TO DEMO":"SWITCH TO REAL"}</button></div></header>
-    <div className="vt-metrics"><div className="vt-metric"><span>Available sandbox balance</span><strong>{account?.currency||"USD"} {fmt(account?.available_capital,2)}</strong><small>Virtual account funds</small></div><div className="vt-metric"><span>Bid / observed price</span><strong>{tick?fmt(tick.price,8):"—"}</strong><small>{symbolName} · public feed</small></div><div className="vt-metric"><span>Open positions</span><strong>{positions.length}</strong><small>Sandbox records</small></div><div className="vt-metric"><span>Floating P/L</span><strong className={openPnl>=0?"vt-positive":"vt-negative"}>{account?.currency||"USD"} {fmt(openPnl,2)}</strong><small>Reported by sandbox service</small></div></div>
+    <div className="vt-metrics"><div className="vt-metric"><span>{mode==="real"?"Available real balance":"Available sandbox balance"}</span><strong>{account?.currency||"USD"} {fmt(account?.available_capital,2)}</strong><small>{mode==="real"?"Authenticated broker cash balance":"Virtual account funds"}</small></div><div className="vt-metric"><span>Bid / observed price</span><strong>{tick?fmt(tick.price,8):"—"}</strong><small>{symbolName} · public feed</small></div><div className="vt-metric"><span>Open positions</span><strong>{positions.length}</strong><small>{mode==="real"?"Real broker positions":"Sandbox records"}</small></div><div className="vt-metric"><span>Floating P/L</span><strong className={openPnl>=0?"vt-positive":"vt-negative"}>{account?.currency||"USD"} {fmt(openPnl,2)}</strong><small>{mode==="real"?"Broker-synchronized P/L":"Reported by sandbox service"}</small></div></div>
     <LiveMarketPanel compact selectedSymbol={symbol} onSymbolChange={setSymbol} onPriceChange={onPrice}/>
     <section className="vt-panel vt-chart-panel"><div className="vt-panel-head"><div><h2>Live TradingView Chart <span className="vt-symbol-code">{symbol}</span></h2><p>{mode==="real"?"Real-account market view":"Demo-account market view"} · chart visualization is independent from execution</p></div></div><TradingViewChart symbol={symbol} interval={timeframe.replace("M","").replace("H", "60").replace("D1","D")} theme="dark"/></section>
     <section className="vt-panel vt-chart-panel"><div className="vt-panel-head"><div><h2>Price Chart <span className="vt-symbol-code">{symbol}</span></h2><p>{candles.length} candles · Deriv fallback OHLC + live tick updates</p></div><div className="vt-timeframes">{TIMEFRAMES.map(t=><button key={t.value} className={timeframe===t.value?"active":""} onClick={()=>setTimeframe(t.value)}>{t.label}</button>)}</div></div><CandleChart candles={candles} symbol={symbolName} price={tick?.price}/><div className="vt-chart-footer"><span><i className="vt-legend-candle up"/> Bullish <i className="vt-legend-candle down"/> Bearish</span><span>Historical data is loaded from Deriv when available; the latest candle updates from the public tick stream.</span></div></section>
