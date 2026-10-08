@@ -91,7 +91,7 @@ const DERIV_PUBLIC_ENDPOINTS = [
   "wss://ws.binaryws.com/websockets/v3",
   "wss://ws.derivws.com/websockets/v3?app_id=1089"
 ];
-const DERIV_DISCOVERY_TIMEOUT_MS = 20000;
+const DERIV_DISCOVERY_TIMEOUT_MS = 7000;
 const DERIV_RETRY_BASE_MS = 2000;
 
 async function invokeAuthenticatedMarketData(body) {
@@ -295,7 +295,7 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
           startServerTickPolling();
         }
         endpointIndex = 0;
-        retryTimer = setTimeout(connect, Math.min(30000, DERIV_RETRY_BASE_MS * (2 ** Math.min(retryCount++, 4))));
+        retryTimer = setTimeout(connect, Math.min(5000, 750 + retryCount++ * 750));
       }
     };
 
@@ -426,14 +426,13 @@ export default function LiveMarketPanel({ compact = false, selectedSymbol = null
           retryTimer = setTimeout(() => {
             endpointIndex = 0;
             connect();
-          }, Math.min(30000, DERIV_RETRY_BASE_MS * (2 ** Math.min(retryCount++, 4))));
+          }, Math.min(5000, 750 + retryCount++ * 750));
         }
       };
     };
 
-    loadServerCatalog().then(() => {
-      if (!disposed) connect();
-    });
+    void loadServerCatalog();
+    connect();
 
     return () => {
       disposed = true;
