@@ -159,7 +159,7 @@ export default function TradingTerminal() {
     if(tp!==null&&(!Number.isFinite(tp)||tp<=0))return setError("Take profit must be a positive price.");
     if(sl!==null&&((side==="BUY"&&sl>=tick.price)||(side==="SELL"&&sl<=tick.price)))return setError("Stop loss must be below the current price for Buy and above it for Sell.");
     if(tp!==null&&((side==="BUY"&&tp<=tick.price)||(side==="SELL"&&tp>=tick.price)))return setError("Take profit must be above the current price for Buy and below it for Sell.");
-    const confirmed=window.confirm(`Confirm ${mode==="real"?"REAL":"SANDBOX"} ${side} order\\nMarket: ${symbolName} (${symbol})\\nSize: ${size}\\nObserved price: ${fmt(tick.price,8)}\\nStop loss: ${sl??"not set"}\\nTake profit: ${tp??"not set"}\\n\\n${mode==="real"?"This sends an order to the authenticated real Deriv account only if server-side production gates and actual broker funds permit it.":"This is a virtual order only. No real broker order will be sent."}`);
+    const confirmed=window.confirm(`Confirm ${mode==="real"?"REAL":"SANDBOX"} ${side} order\nMarket: ${symbolName} (${symbol})\nSize: ${size}\nObserved price: ${fmt(tick.price,8)}\nStop loss: ${sl??"not set"}\nTake profit: ${tp??"not set"}\n\n${mode==="real"?"This sends an order to the authenticated real Deriv account only if server-side production gates and actual broker funds permit it.":"This is a virtual order only. No real broker order will be sent."}`);
     if(!confirmed)return;
     setBusy(true);setError("");
     try{
