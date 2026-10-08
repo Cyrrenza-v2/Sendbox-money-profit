@@ -19,6 +19,7 @@ export default function AIAssistants() {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState({ advisor: [], support: [] });
   const [busy, setBusy] = useState(false);
+  const AI_ENABLED = false;
   const [error, setError] = useState("");
   const bottomRef = useRef(null);
   const activeMessages = messages[mode];
@@ -27,7 +28,7 @@ export default function AIAssistants() {
 
   const send = async (text = draft) => {
     const message = String(text || "").trim();
-    if (!message || busy) return;
+    if (!AI_ENABLED || !message || busy) return;
     setError("");
     setDraft("");
     const current = messages[mode];
@@ -56,7 +57,7 @@ export default function AIAssistants() {
 
   const changeMode = next => { setMode(next); setError(""); };
   return <div className="page ai-page">
-    <div className="page-head"><div><span className="eyebrow">INTELLIGENCE / ASSISTANTS</span><h1>AI Assistants</h1><p>Private, authenticated help for trading education and VELTRION app support.</p></div><span className="live-stamp">ADVISORY ONLY</span></div>
+    <div className="page-head"><div><span className="eyebrow">INTELLIGENCE / ASSISTANTS</span><h1>AI Assistants</h1><p>Private, authenticated help for trading education and VELTRION app support.</p></div><span className="live-stamp">AI UNAVAILABLE</span></div>
     <div className="ai-tabs" role="tablist" aria-label="AI assistant type">
       <button className={mode === "advisor" ? "active" : ""} onClick={() => changeMode("advisor")} role="tab" aria-selected={mode === "advisor"}><b>◈ AI Trading Advisor</b><small>Risk-aware educational analysis</small></button>
       <button className={mode === "support" ? "active" : ""} onClick={() => changeMode("support")} role="tab" aria-selected={mode === "support"}><b>✦ AI Support Assistant</b><small>Navigation and troubleshooting</small></button>
@@ -73,10 +74,10 @@ export default function AIAssistants() {
       {error && <div className="ai-error" role="alert">{error}</div>}
       <form className="ai-composer" onSubmit={e => { e.preventDefault(); send(); }}>
         <label className="sr-only" htmlFor="ai-message">Your message</label>
-        <textarea id="ai-message" rows="2" maxLength={4000} placeholder={mode === "advisor" ? "Ask a question about risk, strategy concepts, or sandbox testing…" : "Describe your VELTRION question or issue…"} value={draft} onChange={e => setDraft(e.target.value)} disabled={busy} />
-        <button className="primary" type="submit" disabled={busy || !draft.trim()}>{busy ? "THINKING…" : "SEND MESSAGE ↗"}</button>
+        <textarea id="ai-message" disabled={!AI_ENABLED} rows="2" maxLength={4000} placeholder={mode === "advisor" ? "Ask a question about risk, strategy concepts, or sandbox testing…" : "Describe your VELTRION question or issue…"} value={draft} onChange={e => setDraft(e.target.value)} disabled={busy} />
+        <button className="primary" type="submit" disabled={!AI_ENABLED || busy || !draft.trim()}>{busy ? "THINKING…" : "SEND MESSAGE ↗"}</button>
       </form>
-      <div className="ai-footnote">AI responses may be inaccurate. Verify important information independently. No trades, transfers, deposits, or withdrawals are executed by these assistants.</div>
+      <div className="ai-disabled-banner">AI is intentionally disabled in this release. No AI Edge Function request will be sent.</div>\n      <div className="ai-footnote">AI responses may be inaccurate. Verify important information independently. No trades, transfers, deposits, or withdrawals are executed by these assistants.</div>
     </section>
   </div>;
 }
