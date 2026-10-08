@@ -125,6 +125,25 @@ export default function RealMT5Terminal(){
         }} onPriceChange={()=>{}}/>
 
         <section className="vt-panel">
+          <div className="vt-section-title"><div><h2>Mobile Trading Test</h2><p>Tecno Pop 10 trades; Samsung tablet monitors VELTRION</p></div><span className="vt-ai-tag">MOBILE + MONITOR</span></div>
+          <div className="market-detail-note">
+            <strong>Trading device:</strong> Log the same Deriv MT5 account into the official MT5 Android app on your Tecno Pop 10. MetaTrader 5 Android supports real and demo accounts and can place trades from the mobile app. VELTRION does not receive the MT5 password.
+          </div>
+          <div className="metric-grid">
+            <div className="metric-card"><span>TECNO POP 10</span><strong>TRADING DEVICE</strong><small>Use the official Deriv MT5 mobile terminal for the test trade.</small></div>
+            <div className="metric-card"><span>SAMSUNG TABLET</span><strong>MONITOR DEVICE</strong><small>Open this VELTRION page to watch heartbeat, balance, positions and history.</small></div>
+            <div className="metric-card"><span>ACCOUNT SOURCE</span><strong>{connected?"BRIDGE LIVE":"WAITING"}</strong><small>{connected?"The private MT5 bridge is supplying account telemetry.":"Mobile MT5 alone cannot supply VELTRION telemetry; an authorized MT5 bridge heartbeat is required."}</small></div>
+            <div className="metric-card"><span>EXECUTION</span><strong>OFFICIAL MT5</strong><small>VELTRION remains read-only and does not fabricate or place MT5 orders.</small></div>
+          </div>
+          <div className="vt-header-actions">
+            <button className="market-open-terminal" onClick={openOfficialMt5}>Open Deriv MT5 Web <span>→</span></button>
+          </div>
+          <div className="market-detail-note">
+            <strong>Verification sequence:</strong> 1) login on Tecno, 2) confirm the same account/server, 3) keep the VELTRION bridge connected, 4) open one small demo trade, 5) watch the Samsung tablet for the position, 6) close it, 7) confirm the closed deal appears in history. No real-money trade should be used for this heartbeat test.
+          </div>
+        </section>
+
+        <section className="vt-panel">
           <div className="vt-section-title">
             <div><h2>MT5 Connection</h2><p>Server/account telemetry supplied by the VELTRION MT5 bridge</p></div>
             <span className="vt-ai-tag">{connected?"CONNECTED":"WAITING"}</span>
