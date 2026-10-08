@@ -275,10 +275,21 @@ Deno.serve(async req => {
       const quote = Number(tick?.quote);
       const epoch = Number(tick?.epoch);
       if (!Number.isFinite(quote) || !Number.isFinite(epoch)) throw new Error("DERIV_PUBLIC_TICK_INVALID");
+      const observedAt = new Date().toISOString();
+      const normalizedSymbol = String(tick?.symbol ?? tick?.underlying_symbol ?? symbol);
+      const { error: stateError } = await db.from("sandbox_market_state").upsert({
+        symbol: normalizedSymbol,
+        price: quote,
+        bid: quote,
+        ask: quote,
+        observed_at: observedAt,
+        raw: { source: "deriv_public_websocket", epoch, pip_size: tick?.pip_size ?? null }
+      }, { onConflict: "symbol" });
+      if (stateError) throw stateError;
       return json({ ok: true, data: {
-        symbol: String(tick?.symbol ?? tick?.underlying_symbol ?? symbol),
+        symbol: normalizedSymbol,
         quote, epoch, pipSize: tick?.pip_size ?? null,
-        source: "server_deriv_public_websocket"
+        source: "server_deriv_public_websocket", observed_at: observedAt
       }});
     }
 
