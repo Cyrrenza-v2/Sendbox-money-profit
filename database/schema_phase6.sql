@@ -24,6 +24,7 @@ create table if not exists public.real_orders (
   id uuid primary key default gen_random_uuid(),
   account_id uuid references public.real_trading_accounts(id) on delete cascade not null,
   deriv_contract_id text,
+  source_sandbox_order_id uuid references public.sandbox_orders(id) on delete set null,
   client_order_id text not null,
   symbol text not null,
   side text not null check (side in ('BUY','SELL')),
@@ -62,6 +63,10 @@ create table if not exists public.real_trading_audit (
 
 create index if not exists real_orders_account_status_idx
   on public.real_orders(account_id, status, created_at desc);
+create index if not exists real_orders_source_sandbox_order_idx
+  on public.real_orders(source_sandbox_order_id)
+  where source_sandbox_order_id is not null;
+
 create index if not exists real_ledger_account_created_idx
   on public.real_ledger(account_id, created_at desc);
 create index if not exists real_audit_account_created_idx
