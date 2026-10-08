@@ -26,6 +26,45 @@ Deno.serve(async req=>{
    const current=snapshots.real||snapshots.sandbox||null;
    return json({ok:true,status:current?.status||"not_connected",snapshot:current,connections:snapshots,accounts:accountByConnection,capabilities:{account_snapshot:true,positions_snapshot:true,orders_snapshot:true,trade_history_snapshot:true,real_mt5_execution:false,reason:"Read-only MT5 telemetry. Real trading remains in the official Deriv MT5 terminal."}});
   }
+  if(req.method==="GET"&&path.endsWith("/commands")){
+   if(!bridgeAuthorized(req))return json({ok:false,error:"Bridge authentication required"},401);
+   const userId=String(new URL(req.url).searchParams.get("user_id")||"").trim();
+   const server=String(new URL(req.url).searchParams.get("server")||"").trim();
+   const login=String(new URL(req.url).searchParams.get("login")||"").trim();
+   if(!userId||!server||!login)return json({ok:false,error:"user_id, server and login are required"},400);
+   const {data:connection,error:connectionError}=await db.from("mt5_connections").select("id,user_id,server,login,environment,status,last_heartbeat_at").eq("user_id",userId).eq("server",server).eq("login",login).maybeSingle();
+   if(connectionError)throw connectionError;
+   if(!connection)return json({ok:false,error:"MT5 connection not found"},404);
+   if(String(connection.environment).toLowerCase()!=="sandbox")return json({ok:true,commands:[]});
+   const hb=connection.last_heartbeat_at?Date.parse(connection.last_heartbeat_at):0;
+   if(connection.status!=="connected"||!hb||hb<Date.now()-45000)return json({ok:false,error:"MT5 heartbeat is stale"},409);
+   const {data:pending,error:pendingError}=await db.from("mt5_trade_commands").select("id,connection_id,environment,symbol,side,volume,stop_loss,take_profit,client_order_id,requested_at,expires_at").eq("connection_id",connection.id).eq("status","PENDING").gt("expires_at",new Date().toISOString()).order("requested_at",{ascending:true}).limit(10);
+   if(pendingError)throw pendingError;
+   const claimed=[];
+   for(const command of pending||[]){
+     const {data:claimedRow,error:claimError}=await db.from("mt5_trade_commands").update({status:"CLAIMED",claimed_at:new Date().toISOString()}).eq("id",command.id).eq("status","PENDING").select().maybeSingle();
+     if(claimError)throw claimError;
+     if(claimedRow)claimed.push(claimedRow);
+   }
+   return json({ok:true,commands:claimed});
+  }
+  if(req.method==="POST"&&path.endsWith("/command-result")){
+   if(!bridgeAuthorized(req))return json({ok:false,error:"Bridge authentication required"},401);
+   const b=await req.json(),commandId=String(b.command_id||"").trim();
+   if(!commandId)return json({ok:false,error:"command_id is required"},400);
+   const status=String(b.status||"").toUpperCase();
+   if(!["EXECUTED","REJECTED"].includes(status))return json({ok:false,error:"status must be EXECUTED or REJECTED"},400);
+   const {data:command,error:commandError}=await db.from("mt5_trade_commands").select("id,user_id,connection_id,environment,symbol,side,volume,status").eq("id",commandId).maybeSingle();
+   if(commandError)throw commandError;
+   if(!command)return json({ok:false,error:"Command not found"},404);
+   if(command.environment!=="sandbox")return json({ok:false,error:"Real MT5 execution is locked"},403);
+   if(!["CLAIMED","PENDING"].includes(command.status))return json({ok:true,idempotent:true,status:command.status});
+   const now=new Date().toISOString();
+   const result={command_id:command.id,user_id:command.user_id,connection_id:command.connection_id,environment:"sandbox",mt5_ticket:b.mt5_ticket?String(b.mt5_ticket):null,status,symbol:command.symbol,side:command.side,volume:Number(command.volume),price:num(b.price),profit:Number.isFinite(Number(b.profit))?Number(b.profit):null,error_code:b.error_code?String(b.error_code):null,message:b.message?String(b.message):null,raw:b.raw&&typeof b.raw==="object"?b.raw:{}};
+   const {data:inserted,error:insertError}=await db.from("mt5_trade_results").upsert(result,{onConflict:"command_id"}).select().single();if(insertError)throw insertError;
+   const {error:updateError}=await db.from("mt5_trade_commands").update({status,mt5_ticket:result.mt5_ticket,executed_at:now,rejection_reason:result.message}).eq("id",command.id);if(updateError)throw updateError;
+   return json({ok:true,result:inserted});
+  }
   if(req.method==="POST"&&path.endsWith("/heartbeat")){
    if(!bridgeAuthorized(req))return json({ok:false,error:"Bridge authentication required"},401);
    const b=await req.json(),userId=String(b.user_id||"").trim(),server=String(b.server||"").trim(),login=String(b.login||"").trim();
