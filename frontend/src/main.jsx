@@ -62,17 +62,22 @@ const basename =
     ? "/"
     : import.meta.env.BASE_URL.replace(/\/$/, "");
 
-if ("serviceWorker" in navigator && import.meta.env.PROD) {
+if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    const swUrl = new URL(
-      "sw.js",
-      window.location.origin + import.meta.env.BASE_URL
-    ).toString();
     navigator.serviceWorker
-      .register(swUrl)
-      .catch((error) =>
-        console.warn("VELTRION service worker registration skipped:", error)
-      );
+      .getRegistrations()
+      .then((registrations) =>
+        Promise.all(registrations.map((registration) => registration.unregister()))
+      )
+      .then(() => caches?.keys?.() || [])
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((key) => key.startsWith("veltrion-shell-"))
+            .map((key) => caches.delete(key))
+        )
+      )
+      .catch(() => {});
   });
 }
 
