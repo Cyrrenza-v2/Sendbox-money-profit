@@ -99,3 +99,5 @@ jobs:
 # MT5 demo/real telemetry UI + bridge v35 deployment verification: 2026-10-08.
 
 # MT5 bridge gateway-auth fix: heartbeat endpoint uses custom bridge auth with handler-level validation.
+
+# OAuth + Deriv API + official MT5 handoff verification checkpoint: 2026-10-08.
