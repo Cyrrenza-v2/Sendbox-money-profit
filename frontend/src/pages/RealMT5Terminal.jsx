@@ -71,7 +71,9 @@ export default function RealMT5Terminal(){
     return()=>{dead=true;clearInterval(id);document.removeEventListener("visibilitychange",wake);window.removeEventListener("focus",wake)};
   },[]);
 
-  const connection=snapshot||null;
+  const realConnection=channels?.real||null;
+  const demoConnection=channels?.sandbox||null;
+  const connection=realConnection||null;
   const meta=connection?.metadata||{};
   const account={balance:meta.balance,equity:meta.equity,margin:meta.margin,free_margin:meta.free_margin};
   const positions=Array.isArray(meta?.positions)?meta.positions:[];
@@ -80,8 +82,9 @@ export default function RealMT5Terminal(){
   const historyOrders=Array.isArray(meta?.history_orders)?meta.history_orders:[];
   const historyDeals=Array.isArray(meta?.history_deals)?meta.history_deals:[];
   const environment=String(connection?.environment||meta?.environment||"real").toLowerCase();
-  const connected=connection?.status==="connected";
-  const displayStatus=connected?"MT5 BRIDGE CONNECTED":loading?"CONNECTING":"MT5 BRIDGE NOT CONNECTED";
+  const connected=realConnection?.status==="connected";
+  const demoConnected=demoConnection?.status==="connected";
+  const displayStatus=connected?"MT5 REAL BRIDGE CONNECTED":loading?"CONNECTING":"MT5 REAL BRIDGE NOT CONNECTED";
   const syncTime=lastSync?lastSync.toLocaleTimeString():"Not synchronized";
   const terminalSymbol=useMemo(()=>symbol,[symbol]);
 
@@ -144,9 +147,20 @@ export default function RealMT5Terminal(){
         </section>
 
         <section className="vt-panel">
+          <div className="vt-section-title"><div><h2>Verified Deriv Account Registry</h2><p>Canonical Deriv IDs currently stored by VELTRION</p></div><span className="vt-ai-tag">BACKEND SOURCE</span></div>
+          <div className="metric-grid">
+            <div className="metric-card"><span>DERIV DEMO</span><strong>DOT92408091</strong><small>Backend account type: demo · connected</small></div>
+            <div className="metric-card"><span>DERIV REAL</span><strong>ROT92635914</strong><small>Backend account type: real · connected · current balance $0.00 USD</small></div>
+            <div className="metric-card"><span>MT5 DEMO</span><strong>{demoConnection?.login||"NOT CONNECTED"}</strong><small>{demoConnected?"Live bridge · "+(demoConnection.server||"server unavailable"):"No MT5 heartbeat exists yet"}</small></div>
+            <div className="metric-card"><span>MT5 REAL</span><strong>{realConnection?.login||"NOT CONNECTED"}</strong><small>{connected?"Live bridge · "+(realConnection.server||"server unavailable"):"No MT5 heartbeat exists yet"}</small></div>
+          </div>
+          <div className="market-detail-note"><strong>Important:</strong> DOT92408091 and ROT92635914 are verified Deriv account IDs. An MT5 login is a separate credential and is only considered verified by VELTRION after an MT5 bridge heartbeat supplies the login and server. VELTRION will not substitute an old or guessed MT5 ID.</div>
+        </section>
+
+        <section className="vt-panel">
           <div className="vt-section-title">
             <div><h2>MT5 Connection</h2><p>Server/account telemetry supplied by the VELTRION MT5 bridge</p></div>
-            <span className="vt-ai-tag">{connected?"CONNECTED":"WAITING"}</span>
+            <span className="vt-ai-tag">{connected?"CONNECTED":"WAITING FOR MT5 BRIDGE"}</span>
           </div>
           <div className="metric-grid">
             <div className="metric-card"><span>Broker</span><strong>{connection?.broker||"—"}</strong><small>MT5 broker identity</small></div>
