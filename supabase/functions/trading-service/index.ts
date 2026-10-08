@@ -399,45 +399,141 @@ async function reconcileRealState(userId: string, balancePayload: any, profitPay
     }).select("id").single();
     if (inserted.error) throw inserted.error;
 
-    const ledgerBalance = Number(currentWallet.available_balance || 0) + Math.max(0, Number(profit));
-    if (Number(profit) > 0) {
-      const ledger = await db.from("real_ledger").insert({
-        account_id: account.id,
-        transaction_type: "TRADE_PNL",
-        reference_id: inserted.data.id,
-        amount: Number(profit),
-        balance_after: Number(account.balance || 0)
-      });
-      if (ledger.error) throw ledger.error;
-
-      const walletUpdate = await db.from("real_profit_wallets").update({
-        available_balance: ledgerBalance,
-        updated_at: new Date().toISOString()
-      }).eq("id", currentWallet.id);
-      if (walletUpdate.error) throw walletUpdate.error;
-
-      const walletTx = await db.from("profit_wallet_transactions").insert({
-        wallet_id: currentWallet.id,
-        transaction_type: "REALIZED_TRADE_PROFIT",
-        amount: Number(profit),
-        balance_after: ledgerBalance,
-        reference_id: inserted.data.id
-      });
-      if (walletTx.error) throw walletTx.error;
-      credited += Number(profit);
-    }
     reconciled += 1;
   }
+
+  const { data: walletReconciliation, error: walletReconciliationError } = await db.rpc(
+    "reconcile_profit_wallet",
+    { p_wallet_id: currentWallet.id }
+  );
+  if (walletReconciliationError) throw walletReconciliationError;
+
+  const reconciledProfit = Array.isArray(walletReconciliation)
+    ? walletReconciliation[0]
+    : walletReconciliation;
 
   await db.from("real_trading_audit").insert({
     account_id: account.id,
     user_id: userId,
     action: "RECONCILE_REAL_STATE",
     result: "SUCCESS",
-    metadata: { reconciled, credited, source: "deriv_profit_table" }
+    metadata: {
+      reconciled,
+      credited: Number(reconciledProfit?.withdrawableProfit || 0),
+      source: "deriv_profit_table",
+      wallet_reconciliation: reconciledProfit || null
+    }
   });
 
-  return { account_id: account.id, balance: accountUpdate.balance, reconciled, credited_profit: credited };
+  return {
+    account_id: account.id,
+    balance: accountUpdate.balance,
+    reconciled,
+    credited_profit: Number(reconciledProfit?.withdrawableProfit || 0),
+    wallet_reconciliation: reconciledProfit || null
+  };
+}
+
+async function executeSendboxDecision(userId: string, body: any) {
+  const sandboxOrderId = String(body.sandbox_order_id || "").trim();
+  const stake = Number(body.stake);
+  const duration = Number(body.duration ?? 1);
+  const durationUnit = String(body.duration_unit || "m");
+  if (!sandboxOrderId) throw new Error("SANDBOX_DECISION_REQUIRED");
+  if (!Number.isFinite(stake) || stake <= 0) throw new Error("INVALID_REAL_STAKE");
+  if (!Number.isInteger(duration) || duration <= 0) throw new Error("INVALID_DURATION");
+  if (!["s","m","h","d"].includes(durationUnit)) throw new Error("INVALID_DURATION_UNIT");
+
+  await tradingGate(userId);
+
+  const { data: decision, error: decisionError } = await db.from("sandbox_orders")
+    .select("id,user_id,symbol,side,status,quantity,price,stop_loss,take_profit,created_at")
+    .eq("id", sandboxOrderId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (decisionError) throw decisionError;
+  if (!decision) throw new Error("SANDBOX_DECISION_NOT_FOUND");
+  if (["CLOSED","REJECTED","CANCELLED"].includes(String(decision.status || "").toUpperCase()))
+    throw new Error("SANDBOX_DECISION_NOT_ACTIVE");
+
+  const symbol = String(decision.symbol || "").trim();
+  const side = String(decision.side || "").toUpperCase();
+  if (!symbol || !["BUY","SELL"].includes(side)) throw new Error("SANDBOX_DECISION_INVALID");
+
+  const clientOrderId = String(body.client_order_id || crypto.randomUUID());
+  const contractType = side === "BUY" ? "CALL" : "PUT";
+  const proposal = await realWsCall(userId, {
+    proposal: 1,
+    amount: stake,
+    basis: "stake",
+    contract_type: contractType,
+    currency: "USD",
+    duration,
+    duration_unit: durationUnit,
+    underlying_symbol: symbol,
+    passthrough: {
+      source: "sendbox_decision",
+      sandbox_order_id: sandboxOrderId,
+      client_order_id: clientOrderId
+    }
+  }, "proposal");
+
+  const proposalId = String(proposal?.proposal?.id || "").trim();
+  const maxPrice = Number(proposal?.proposal?.ask_price);
+  if (!proposalId) throw new Error("DERIV_PROPOSAL_MISSING_ID");
+  if (!Number.isFinite(maxPrice) || maxPrice <= 0) throw new Error("DERIV_PROPOSAL_INVALID_PRICE");
+
+  const bought = await realWsCall(userId, {
+    buy: proposalId,
+    price: maxPrice,
+    passthrough: {
+      source: "sendbox_decision",
+      sandbox_order_id: sandboxOrderId,
+      client_order_id: clientOrderId
+    }
+  }, "buy");
+
+  const contractId = String(bought?.buy?.contract_id || "").trim();
+  if (!contractId) throw new Error("DERIV_BUY_MISSING_CONTRACT_ID");
+
+  const { account } = await realContext(userId);
+  const inserted = await db.from("real_orders").insert({
+    account_id: account.id,
+    deriv_contract_id: contractId,
+    client_order_id: clientOrderId,
+    source_sandbox_order_id: sandboxOrderId,
+    symbol,
+    side: "BUY",
+    quantity: stake,
+    entry_price: Number(bought.buy.buy_price ?? maxPrice),
+    status: "CONFIRMED"
+  }).select("id,deriv_contract_id,client_order_id,source_sandbox_order_id,status").single();
+  if (inserted.error) throw inserted.error;
+
+  await db.from("real_trading_audit").insert({
+    account_id: account.id,
+    user_id: userId,
+    action: "SENDBOX_DECISION_ROUTED_TO_REAL_DERIV",
+    result: "SUCCESS",
+    metadata: {
+      sandbox_order_id: sandboxOrderId,
+      real_order_id: inserted.data.id,
+      deriv_contract_id: contractId,
+      symbol,
+      decision_side: side,
+      stake,
+      duration,
+      duration_unit: durationUnit
+    }
+  });
+
+  return {
+    status: "CONFIRMED",
+    source: "sendbox_decision",
+    sandbox_order_id: sandboxOrderId,
+    real_order: inserted.data,
+    deriv: bought.buy
+  };
 }
 
 async function handle(userId: string, body: any) {
@@ -808,6 +904,11 @@ async function handle(userId: string, body: any) {
       contract_id: Number(body.contract_id),
       subscribe: body.subscribe === 1 ? 1 : undefined
     }, "proposal_open_contract");
+  }
+
+  if (op === "sendbox_real_execute") {
+    if (PRODUCTION_READ_ONLY_FREEZE) throw new Error("PRODUCTION_READ_ONLY_FREEZE");
+    return executeSendboxDecision(userId, body);
   }
 
   if (op === "buy") {
