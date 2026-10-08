@@ -97,3 +97,5 @@ jobs:
 # Sandbox mirror + official Deriv MT5 web handoff deployment checkpoint: 2026-10-08.
 
 # MT5 demo/real telemetry UI + bridge v35 deployment verification: 2026-10-08.
+
+# MT5 bridge gateway-auth fix: heartbeat endpoint uses custom bridge auth with handler-level validation.
