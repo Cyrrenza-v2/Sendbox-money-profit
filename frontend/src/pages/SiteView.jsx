@@ -1,0 +1,2 @@
+import { useNavigate } from "react-router-dom";
+export default function SiteView(){const navigate=useNavigate();return <div className="v1-site"><div className="v1-site-inner"><span className="v1-site-kicker">PRIVATE TRADING PLATFORM</span><h1>VELTRION</h1><p>Professional market intelligence, sandbox trading and controlled real-account reconciliation in one workspace.</p><div><button onClick={()=>navigate("/app/home")}>ENTER VELTRION</button><span>Deriv-connected · Sendbox Money</span></div></div></div>}
