@@ -42,6 +42,7 @@ export default function TradingTerminal() {
   const [realBusy,setRealBusy]=useState(false);
   const [quantity,setQuantity]=useState("0.01"),[stopLoss,setStopLoss]=useState(""),[takeProfit,setTakeProfit]=useState("");
   const [e2eBusy,setE2eBusy]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[activeTab,setActiveTab]=useState("positions");
+  const refreshInFlightRef=useRef(false);
 
   const lastMarkRef=useRef(0),priceRef=useRef(null),timeframeRef=useRef(timeframe);
   useEffect(()=>{const requested=searchParams.get("symbol");if(requested)setSymbol(requested);},[searchParams]);
@@ -68,7 +69,23 @@ export default function TradingTerminal() {
     const history=Array.isArray(data?.profit_table?.transactions)?data.profit_table.transactions:[];
     setOrders(history.map((x,i)=>({id:String(x.transaction_id??x.id??i),symbol:x.symbol??x.underlying_symbol??"—",side:x.action??x.contract_type??"—",quantity:x.amount??x.buy_price??"—",price:x.buy_price??x.sell_price??"—",status:"CLOSED",realized_pnl:x.profit??x.profit_loss??0,created_at:x.transaction_time?new Date(Number(x.transaction_time)*1000).toISOString():null})));
   };
-  useEffect(()=>{let alive=true;refresh().catch(e=>{if(alive)setError(e.message||"Account could not be loaded.");});const timer=setInterval(()=>refresh().catch(()=>{}),5000);return()=>{alive=false;clearInterval(timer);};},[mode]);
+  useEffect(()=>{
+    let alive=true;
+    let timer=null;
+    const runRefresh=async()=>{
+      if(!alive||refreshInFlightRef.current||document.visibilityState==="hidden")return;
+      refreshInFlightRef.current=true;
+      try{await refresh();if(alive)setError("");}
+      catch(e){if(alive)setError(e.message||"Account could not be loaded.");}
+      finally{refreshInFlightRef.current=false;}
+    };
+    void runRefresh();
+    timer=setInterval(()=>void runRefresh(),15000);
+    const onVisible=()=>{if(document.visibilityState==="visible")void runRefresh();};
+    window.addEventListener("online",onVisible);
+    document.addEventListener("visibilitychange",onVisible);
+    return()=>{alive=false;if(timer)clearInterval(timer);window.removeEventListener("online",onVisible);document.removeEventListener("visibilitychange",onVisible);};
+  },[mode]);
 
   // Load real historical OHLC candles from Deriv. The separate socket keeps the
   // chart history independent from the market-watch socket and never authorizes trades.
