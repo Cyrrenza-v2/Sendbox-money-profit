@@ -7,6 +7,8 @@ const cors = {
   "Content-Type": "application/json",
 };
 
+const AI_ENABLED = false;
+
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
 function json(body: Record<string, unknown>, status = 200) {
@@ -76,6 +78,7 @@ async function writeAudit(req: Request, model: string, mode: string, message: st
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, error: "Method not allowed." }, 405);
+  if (!AI_ENABLED) return json({ ok: true, disabled: true, error: "AI_REVIEW_DISABLED", message: "AI is intentionally disabled in this release." });
 
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) {
