@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import LiveMarketPanel from "../components/LiveMarketPanel";
@@ -39,6 +40,10 @@ async function invokeMt5Bridge(){
 function Metric({label,value,detail}){return <div className="market-account-card"><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>}
 
 export default function RealMT5Terminal(){
+  return <Navigate to="/app/trading/terminal?mode=real" replace />;
+}
+
+function LegacyRealMT5Telemetry(){
   const [params,setParams]=useSearchParams();
   const symbol=params.get("symbol")||"frxEURUSD";
   const [side,setSide]=useState(false);
