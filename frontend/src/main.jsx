@@ -5,15 +5,12 @@ import App from "./App";
 import "./styles.css";
 
 class ErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { error: null, errorId: null };
-  }
+  state = { error: null, errorId: null };
 
   static getDerivedStateFromError(error) {
     return {
       error,
-      errorId: globalThis.crypto?.randomUUID?.() || String(Date.now())
+      errorId: globalThis.crypto?.randomUUID?.() || String(Date.now()),
     };
   }
 
@@ -42,7 +39,6 @@ class ErrorBoundary extends React.Component {
 }
 
 function RuntimeErrorMonitor({ children }) {
-  const [runtimeError, setRuntimeError] = React.useState(null);
   React.useEffect(() => {
     const onError = (event) => {
       if (event?.error) console.error("VELTRION window error:", event.error);
@@ -57,14 +53,26 @@ function RuntimeErrorMonitor({ children }) {
       window.removeEventListener("unhandledrejection", onRejection);
     };
   }, []);
-  return runtimeError ? <div className="app-error"><div className="app-error-card"><b>VELTRION</b><h1>Frontend runtime error</h1><p>{String(runtimeError?.message || runtimeError)}</p><button onClick={() => setRuntimeError(null)}>TRY AGAIN</button></div></div> : children;
+
+  return children;
 }
 
-const basename = import.meta.env.BASE_URL === "/" ? "/" : import.meta.env.BASE_URL.replace(/\/$/, "");
+const basename =
+  import.meta.env.BASE_URL === "/"
+    ? "/"
+    : import.meta.env.BASE_URL.replace(/\/$/, "");
+
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
-    const swUrl = new URL("sw.js", window.location.origin + import.meta.env.BASE_URL).toString();
-    navigator.serviceWorker.register(swUrl).catch((error) => console.warn("VELTRION service worker registration skipped:", error));
+    const swUrl = new URL(
+      "sw.js",
+      window.location.origin + import.meta.env.BASE_URL
+    ).toString();
+    navigator.serviceWorker
+      .register(swUrl)
+      .catch((error) =>
+        console.warn("VELTRION service worker registration skipped:", error)
+      );
   });
 }
 
