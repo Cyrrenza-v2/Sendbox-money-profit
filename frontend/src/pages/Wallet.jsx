@@ -113,16 +113,21 @@ export default function Wallet() {
       }
       if (!destination.trim()) throw new Error("AUTHORIZED_DESTINATION_REQUIRED");
 
-      const { error } = await supabase.rpc("request_profit_withdrawal", {
-        p_wallet_id: wallet.id,
-        p_amount: amount,
-        p_destination: destination.trim()
+      const { data: result, error } = await supabase.functions.invoke("withdrawal-service", {
+        body: {
+          operation: "request",
+          wallet_id: wallet.id,
+          amount,
+          destination: destination.trim(),
+          idempotency_key: crypto.randomUUID()
+        }
       });
       if (error) throw error;
+      if (!result?.ok) throw new Error(result?.error || "WITHDRAWAL_REQUEST_FAILED");
 
       setWithdrawAmount("");
       setDestination("");
-      setNotice("Withdrawal requested and reserved. Profit settlement is handled through the authorized Sendbox withdrawal flow.");
+      setNotice("Withdrawal requested and reserved. Provider settlement remains server-controlled.");
       await load();
     } catch (e) {
       setNotice(e?.message || "WITHDRAWAL_REQUEST_FAILED");
