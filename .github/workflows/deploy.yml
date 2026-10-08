@@ -1,11 +1,7 @@
 name: Deploy VELTRION to GitHub Pages
-# Deployment trigger for the current main branch build.
 # Manual redeploy checkpoint: 2026-10-03 — terminal verification requested.
-# Explicit deployment requested for the verified terminal live-feed fix.
 # Manual deployment trigger: 2026-10-03 — user requested deploy and verify.
-# GitHub Pages deployment verification trigger: 2026-10-03.
 # Deployment verification: MT5 bridge v30 protected integration.
-# Manual live verification redeploy: 2026-10-06.
 # Live terminal verification deployment checkpoint: 2026-10-06T18:04:56.728Z.
 on:
   push:
@@ -89,17 +85,24 @@ jobs:
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
-# Terminal navigation deployment checkpoint: 2026-10-06
-
-# Real terminal navigation fix deployment trigger: 2026-10-07.
-
-# Sandbox mirror + official Deriv MT5 web handoff deployment checkpoint: 2026-10-08.
-
-# MT5 demo/real telemetry UI + bridge v35 deployment verification: 2026-10-08.
-
-# MT5 bridge gateway-auth fix: heartbeat endpoint uses custom bridge auth with handler-level validation.
-
-# OAuth + Deriv API + official MT5 handoff verification checkpoint: 2026-10-08.
-
-# Automated Pages verification checkpoint: 2026-10-08.
+        uses: actions/deploy-pages@v4\n
+  live-smoke:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify GitHub Pages is live
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://cyrrenza-v2.github.io/Sendbox-money-profit/"
+          for attempt in 1 2 3 4 5 6; do
+            status="$(curl -L -sS -o /tmp/veltrion.html -w '%{http_code}' --max-time 30 "$URL")" || status="000"
+            if [ "$status" = "200" ] && grep -q "VELTRION" /tmp/veltrion.html; then
+              echo "GitHub Pages live: HTTP $status"
+              exit 0
+            fi
+            echo "Attempt $attempt: GitHub Pages not ready (HTTP $status); waiting..."
+            sleep 10
+          done
+          echo "GitHub Pages live verification failed."
+          exit 1
