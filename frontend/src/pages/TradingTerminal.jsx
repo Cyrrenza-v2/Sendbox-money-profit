@@ -173,8 +173,8 @@ export default function TradingTerminal() {
         setRealBusy(true);
         const sandboxSnap=await sandboxEngine.snapshot();
         const sandboxOrders=sandboxSnap?.data?.orders||[];
-        const selectedOrder=[...sandboxOrders].reverse().find(o=>o.symbol===symbol&&String(o.status||"").toUpperCase()==="OPEN");
-        if(!selectedOrder) throw new Error("SENDbox_AUTHORIZATION_ORDER_REQUIRED: create a sandbox order first so the real pipeline can authorize its exact order.");
+        const selectedOrder=[...sandboxOrders].reverse().find(o=>o.symbol===symbol&&String(o.status||"").toUpperCase()==="OPEN"&&String(o.side||"").toUpperCase()===side);
+        if(!selectedOrder) throw new Error("SENDbox_AUTHORIZATION_ORDER_REQUIRED: first create an OPEN sandbox order for this same symbol and side. No real order was sent.");
         const result=await invokeRealPipeline({operation:"execute",sandbox_order_id:selectedOrder.id,side,symbol,stake:size,client_order_id:`sendbox-real:${selectedOrder.id}`});
         setNotice(`Real pipeline response received. Broker confirmation: ${result?.contract_id||result?.contract?.contract_id||"pending reconciliation"}.`);
       }
