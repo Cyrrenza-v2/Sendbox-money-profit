@@ -280,8 +280,8 @@ Deno.serve(async req => {
       const { error: stateError } = await db.from("sandbox_market_state").upsert({
         symbol: normalizedSymbol,
         price: quote,
-        bid: quote,
-        ask: quote,
+        bid: null,
+        ask: null,
         observed_at: observedAt,
         raw: { source: "deriv_public_websocket", epoch, pip_size: tick?.pip_size ?? null }
       }, { onConflict: "symbol" });
