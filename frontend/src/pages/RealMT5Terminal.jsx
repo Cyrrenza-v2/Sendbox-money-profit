@@ -47,12 +47,16 @@ export default function RealMT5Terminal(){
   const [lastSync,setLastSync]=useState(null);
   const [loading,setLoading]=useState(true);
   const [channels,setChannels]=useState({});
+  const [derivAccounts,setDerivAccounts]=useState([]);
 
   const refresh=async()=>{
     try{
       const data=await invokeMt5Bridge();
       setSnapshot(data?.snapshot||null);
       setChannels(data?.connections||{});
+      const {data:registry,error:registryError}=await supabase.from("deriv_accounts").select("deriv_account_id,account_type,currency,status,last_synced_at").order("last_synced_at",{ascending:false});
+      if(registryError) throw registryError;
+      setDerivAccounts(registry||[]);
       setError("");
       setLastSync(new Date());
     }catch(e){
@@ -149,12 +153,12 @@ export default function RealMT5Terminal(){
         <section className="vt-panel">
           <div className="vt-section-title"><div><h2>Verified Deriv Account Registry</h2><p>Canonical Deriv IDs currently stored by VELTRION</p></div><span className="vt-ai-tag">BACKEND SOURCE</span></div>
           <div className="metric-grid">
-            <div className="metric-card"><span>DERIV DEMO</span><strong>DOT92408091</strong><small>Backend account type: demo · connected</small></div>
-            <div className="metric-card"><span>DERIV REAL</span><strong>ROT92635914</strong><small>Backend account type: real · connected · current balance $0.00 USD</small></div>
+            <div className="metric-card"><span>DERIV DEMO</span><strong>{derivAccounts.find(x=>x.account_type==="demo")?.deriv_account_id||"NOT REGISTERED"}</strong><small>{derivAccounts.find(x=>x.account_type==="demo")?.status||"No backend demo account record"}</small></div>
+            <div className="metric-card"><span>DERIV REAL</span><strong>{derivAccounts.find(x=>x.account_type==="real")?.deriv_account_id||"NOT REGISTERED"}</strong><small>{derivAccounts.find(x=>x.account_type==="real")?.status||"No backend real account record"}</small></div>
             <div className="metric-card"><span>MT5 DEMO</span><strong>{demoConnection?.login||"NOT CONNECTED"}</strong><small>{demoConnected?"Live bridge · "+(demoConnection.server||"server unavailable"):"No MT5 heartbeat exists yet"}</small></div>
             <div className="metric-card"><span>MT5 REAL</span><strong>{realConnection?.login||"NOT CONNECTED"}</strong><small>{connected?"Live bridge · "+(realConnection.server||"server unavailable"):"No MT5 heartbeat exists yet"}</small></div>
           </div>
-          <div className="market-detail-note"><strong>Important:</strong> DOT92408091 and ROT92635914 are verified Deriv account IDs. An MT5 login is a separate credential and is only considered verified by VELTRION after an MT5 bridge heartbeat supplies the login and server. VELTRION will not substitute an old or guessed MT5 ID.</div>
+          <div className="market-detail-note"><strong>Important:</strong> The Deriv IDs shown above are read directly from the VELTRION backend account registry. An MT5 login is a separate credential and is only considered verified by VELTRION after an MT5 bridge heartbeat supplies the login and server. VELTRION will not substitute an old or guessed MT5 ID.</div>
         </section>
 
         <section className="vt-panel">
