@@ -1,0 +1,120 @@
+/* VELTRION readable system-theme correction: loaded last to override legacy styles. */
+:root {
+  color-scheme: light dark;
+  --vel-bg: #f5f7fb;
+  --vel-panel: #ffffff;
+  --vel-border: #d6dce7;
+  --vel-muted: #536174;
+  --vel-text: #172033;
+  --vel-heading: #111827;
+  --vel-accent: #4f46e5;
+  --vel-accent-2: #6d28d9;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --vel-bg: #f5f7fb;
+  --vel-panel: #ffffff;
+  --vel-border: #d6dce7;
+  --vel-muted: #536174;
+  --vel-text: #172033;
+  --vel-heading: #111827;
+  --vel-accent: #4f46e5;
+  --vel-accent-2: #6d28d9;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --vel-bg: #0b1020;
+  --vel-panel: #121a2b;
+  --vel-border: #2b3549;
+  --vel-muted: #b0bdd0;
+  --vel-text: #e8edf6;
+  --vel-heading: #f8fafc;
+  --vel-accent: #a5b4fc;
+  --vel-accent-2: #c4b5fd;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --vel-bg: #f5f7fb;
+    --vel-panel: #ffffff;
+    --vel-border: #d6dce7;
+    --vel-muted: #536174;
+    --vel-text: #172033;
+    --vel-heading: #111827;
+    --vel-accent: #4f46e5;
+    --vel-accent-2: #6d28d9;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --vel-bg: #0b1020;
+    --vel-panel: #121a2b;
+    --vel-border: #2b3549;
+    --vel-muted: #b0bdd0;
+    --vel-text: #e8edf6;
+    --vel-heading: #f8fafc;
+    --vel-accent: #a5b4fc;
+    --vel-accent-2: #c4b5fd;
+  }
+}
+html, body, #root, .vel-app, .vel-main, .vel-content {
+  background: var(--vel-bg) !important;
+  color: var(--vel-text);
+}
+.vel-sidebar, .vel-topbar, .vel-mobile-nav, .vel-panel, .vel-metric-card,
+.vel-home-primary-card, .market-choice-card, .login-card, .confirm-modal {
+  background: var(--vel-panel) !important;
+  border-color: var(--vel-border) !important;
+  color: var(--vel-text);
+}
+.vel-page-heading h1, .vel-panel h1, .vel-panel h2, .vel-panel h3,
+.vel-metric-card strong, .vel-data-field strong, .vel-market-row b,
+.vel-table td, .vel-breadcrumb strong, .market-details-hero h2 {
+  color: var(--vel-heading) !important;
+}
+.vel-page-heading p, .vel-panel p, .vel-metric-card > span,
+.vel-metric-card > small, .vel-panel-title, .vel-status-row > span,
+.vel-market-row small, .vel-market-row > span, .vel-data-field span,
+.vel-table th, .vel-empty-inline, .vel-footnote, .vel-health {
+  color: var(--vel-muted) !important;
+}
+.vel-brand, .vel-eyebrow, .vel-nav-icon, .home-card-kicker, .market-kicker {
+  color: var(--vel-accent) !important;
+}
+.vel-nav-item { color: var(--vel-text) !important; }
+.vel-nav-item:hover, .vel-nav-item.active,
+.vel-primary-nav button:hover, .vel-primary-nav button.active {
+  background: color-mix(in srgb, var(--vel-accent) 10%, var(--vel-panel)) !important;
+  color: var(--vel-accent) !important;
+}
+.vel-panel-title, .vel-status-row, .vel-market-row, .vel-table td, .vel-table th {
+  border-color: var(--vel-border) !important;
+}
+.vel-data-field, .vel-tick-row, .market-card, .vt-label input, .vt-label select,
+.wallet-actions input {
+  background: var(--vel-panel) !important;
+  color: var(--vel-text) !important;
+  border-color: var(--vel-border) !important;
+}
+.vel-button-muted, .vel-back-link, .vel-mobile-nav button {
+  color: var(--vel-text) !important;
+}
+.vel-mobile-nav button.active { color: var(--vel-accent) !important; }
+.vel-mobile-nav button span { color: inherit !important; }
+.vel-mode-switch, .vel-data-source {
+  color: var(--vel-accent) !important;
+  background: color-mix(in srgb, var(--vel-accent) 8%, var(--vel-panel)) !important;
+  border-color: var(--vel-border) !important;
+}
+.vel-table-wrap, .vt-table-wrap { max-width: 100%; }
+button, input, select, textarea { color-scheme: inherit; }
+:focus-visible { outline: 3px solid var(--vel-accent) !important; outline-offset: 2px; }
+@media (prefers-contrast: more) {
+  :root { --vel-muted: #39465a; --vel-border: #8b96a8; }
+  :root[data-theme="dark"] { --vel-muted: #d5deed; --vel-border: #68758a; }
+  .vel-page-heading p, .vel-panel p, .vel-metric-card > span,
+  .vel-metric-card > small, .vel-panel-title, .vel-status-row > span,
+  .vel-market-row small, .vel-market-row > span, .vel-data-field span,
+  .vel-table th, .vel-empty-inline, .vel-footnote { opacity: 1 !important; }
+}
