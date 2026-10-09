@@ -72,8 +72,8 @@ export default function Security() {
       const { error: signOutError } = await supabase.auth.signOut({ scope: "others" });
       if (signOutError) throw signOutError;
 
-      setNotice("Other Supabase authentication sessions were signed out. Application session records are shown separately and are not treated as proof of an active Auth session.");
       await fetchSecurityData();
+      setNotice("Other Supabase authentication sessions were signed out. Application session records are shown separately and are not treated as proof of an active Auth session.");
     } catch (err) {
       setError(err?.message || "Unable to sign out other sessions.");
     } finally {
