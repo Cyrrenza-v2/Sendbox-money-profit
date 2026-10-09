@@ -175,7 +175,7 @@ export default function TradingTerminal() {
         const sandboxOrders=sandboxSnap?.data?.orders||[];
         const selectedOrder=[...sandboxOrders].reverse().find(o=>o.symbol===symbol&&String(o.status||"").toUpperCase()==="OPEN"&&String(o.side||"").toUpperCase()===side);
         if(!selectedOrder) throw new Error("SENDbox_AUTHORIZATION_ORDER_REQUIRED: first create an OPEN sandbox order for this same symbol and side. No real order was sent.");
-        const result=await invokeRealPipeline({operation:"execute",sandbox_order_id:selectedOrder.id,side,symbol,stake:size,client_order_id:`sendbox-real:${selectedOrder.id}`});
+        const result=await invokeRealPipeline({op:"execute",sandbox_order_id:selectedOrder.id,side,symbol,stake:size,client_order_id:`sendbox-real:${selectedOrder.id}`});
         setNotice(`Real pipeline response received. Broker confirmation: ${result?.contract_id||result?.contract?.contract_id||"pending reconciliation"}.`);
       }
       await refresh();setActiveTab("positions");
@@ -190,8 +190,8 @@ export default function TradingTerminal() {
       if(mode==="demo"){
         await sandboxEngine.closePosition({position_id:p.id,exit_price:current.price,idempotency_key:crypto.randomUUID()});setNotice("Sandbox position closed.");
       }else{
-        await invokeRealPipeline({operation:"close",contract_id:p.contract_id});
-        await invokeRealPipeline({operation:"reconcile",contract_id:p.contract_id});
+        await invokeRealPipeline({op:"close",contract_id:p.contract_id});
+        await invokeRealPipeline({op:"reconcile",contract_id:p.contract_id});
         setNotice("Real contract close and broker P&L reconciliation requested.");
       }
       await refresh();
