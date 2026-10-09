@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import "./styles.css";
+import "./theme-contrast-fix.css";
 
 class ErrorBoundary extends React.Component {
   state = { error: null, errorId: null };
