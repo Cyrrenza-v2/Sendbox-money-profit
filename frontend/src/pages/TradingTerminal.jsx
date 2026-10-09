@@ -38,7 +38,7 @@ export default function TradingTerminal() {
   const [tick,setTick]=useState(null),[feed,setFeed]=useState("WAITING"),[candles,setCandles]=useState([]),[timeframe,setTimeframe]=useState("M5");
   const [mode,setMode]=useState(()=>searchParams.get("mode")==="real"?"real":"demo");
   const [account,setAccount]=useState(null),[positions,setPositions]=useState([]),[orders,setOrders]=useState([]);
-  const [realSnapshot,setRealSnapshot]=useState(null);
+  const [realSnapshot,setRealSnapshot]=useState(null),[realSandboxAccount,setRealSandboxAccount]=useState(null);
   const [realBusy,setRealBusy]=useState(false);
   const [quantity,setQuantity]=useState("0.01"),[stopLoss,setStopLoss]=useState(""),[takeProfit,setTakeProfit]=useState("");
   const [e2eBusy,setE2eBusy]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[activeTab,setActiveTab]=useState("positions"),[chartView,setChartView]=useState("chart"),[chartStyle,setChartStyle]=useState("candles"),[orderType,setOrderType]=useState("market"),[showOrderPanel,setShowOrderPanel]=useState(true);
@@ -61,6 +61,9 @@ export default function TradingTerminal() {
       setAccount(data.accounts?.[0]||data.account||null);setPositions(data.positions||[]);setOrders(data.orders||[]);
       return;
     }
+    const sandboxState=await sandboxEngine.snapshot();
+    const sandboxAccounts=sandboxState?.data?.accounts||[];
+    setRealSandboxAccount(sandboxAccounts.find(a=>String(a.sandbox_type||"").toLowerCase()==="real_mirror")||null);
     const data=await invokeTrading({operation:"real_snapshot"});
     const balance=Number(data?.balance?.balance);
     setRealSnapshot(data);
@@ -173,7 +176,8 @@ export default function TradingTerminal() {
         setRealBusy(true);
         const sandboxSnap=await sandboxEngine.snapshot();
         const sandboxOrders=sandboxSnap?.data?.orders||[];
-        const selectedOrder=[...sandboxOrders].reverse().find(o=>o.symbol===symbol&&String(o.status||"").toUpperCase()==="OPEN"&&String(o.side||"").toUpperCase()===side);
+        if(!realSandboxAccount?.id) throw new Error("REAL_SANDBOX_ACCOUNT_NOT_CONFIGURED: the isolated real_mirror sandbox is unavailable. No real order was sent.");
+        const selectedOrder=[...sandboxOrders].reverse().find(o=>o.sandbox_account_id===realSandboxAccount.id&&o.symbol===symbol&&String(o.status||"").toUpperCase()==="OPEN"&&String(o.side||"").toUpperCase()===side);
         if(!selectedOrder) throw new Error("SENDbox_AUTHORIZATION_ORDER_REQUIRED: first create an OPEN sandbox order for this same symbol and side. No real order was sent.");
         const result=await invokeRealPipeline({op:"execute",sandbox_order_id:selectedOrder.id,side,symbol,stake:size,client_order_id:`sendbox-real:${selectedOrder.id}`});
         setNotice(`Real pipeline response received. Broker confirmation: ${result?.contract_id||result?.contract?.contract_id||"pending reconciliation"}.`);
