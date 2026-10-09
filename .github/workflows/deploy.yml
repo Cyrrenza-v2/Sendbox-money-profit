@@ -65,7 +65,7 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: Verify production artifact
+      - name: Verify production artifact and publish SPA deep-link fallback
         shell: bash
         run: |
           set -euo pipefail
@@ -73,7 +73,11 @@ jobs:
           test -s frontend/dist/assets/index-*.js
           test -s frontend/dist/assets/index-*.css
           cp frontend/dist/index.html frontend/dist/404.html
-          grep -q '/assets/' frontend/dist/index.html
+          # GitHub Pages does not natively route React Router paths. Publish a
+          # physical index for the wallet overview so direct links and refreshes work.
+          mkdir -p frontend/dist/app/wallet/overview
+          cp frontend/dist/index.html frontend/dist/app/wallet/overview/index.html
+          grep -q '/Sendbox-money-profit/assets/' frontend/dist/index.html
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
@@ -91,19 +95,17 @@ jobs:
     needs: build-and-deploy
     runs-on: ubuntu-latest
     steps:
-      - name: Verify GitHub Pages is live
+      - name: Verify homepage and wallet overview deep link
         shell: bash
         run: |
           set -euo pipefail
-          URL="https://cyrrenza-v2.github.io/Sendbox-money-profit/"
-          for attempt in 1 2 3 4 5 6; do
+          for URL in \
+            "https://cyrrenza-v2.github.io/Sendbox-money-profit/" \
+            "https://cyrrenza-v2.github.io/Sendbox-money-profit/app/wallet/overview"; do
             status="$(curl -L -sS -o /tmp/veltrion.html -w '%{http_code}' --max-time 30 "$URL")" || status="000"
-            if [ "$status" = "200" ] && grep -q "VELTRION" /tmp/veltrion.html; then
-              echo "GitHub Pages live: HTTP $status"
-              exit 0
+            if [ "$status" != "200" ] || ! grep -q "VELTRION" /tmp/veltrion.html; then
+              echo "GitHub Pages live verification failed for $URL (HTTP $status)"
+              exit 1
             fi
-            echo "Attempt $attempt: GitHub Pages not ready (HTTP $status); waiting..."
-            sleep 10
+            echo "GitHub Pages live: HTTP $status — $URL"
           done
-          echo "GitHub Pages live verification failed."
-          exit 1
