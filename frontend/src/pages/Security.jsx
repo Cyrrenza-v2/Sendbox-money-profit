@@ -27,12 +27,12 @@ export default function Security() {
       const [sessionResult, auditResult] = await Promise.all([
         supabase
           .from("user_sessions")
-          .select("id,status,last_seen_at,last_active_at,created_at,browser_info")
+          .select("id,status,last_seen_at,created_at")
           .eq("user_id", currentUser.id)
           .order("created_at", { ascending: false })
           .limit(20),
         supabase
-          .from("audit_events")
+          .from("audit_logs")
           .select("action,source,environment,result,created_at")
           .eq("user_id", currentUser.id)
           .order("created_at", { ascending: false })
@@ -121,7 +121,7 @@ export default function Security() {
             {loading ? <div className="empty">Loading session records…</div> :
               sessions.length ? sessions.map((session) => (
                 <div className="audit-row" key={session.id}>
-                  <span>{session.status || "UNKNOWN"}{session.browser_info ? ` · ${session.browser_info}` : ""}</span>
+                  <span>{session.status || "UNKNOWN"}</span>
                   <span>{(session.last_active_at || session.last_seen_at || session.created_at) ? new Date(session.last_active_at || session.last_seen_at || session.created_at).toLocaleString() : "Time unavailable"}</span>
                 </div>
               )) : <div className="empty">No application session records are available. This does not prove that no Supabase Auth session exists.</div>}
